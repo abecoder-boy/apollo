@@ -491,8 +491,10 @@ async function doRegister() {
     const res = await auth.createUserWithEmailAndPassword(email, pw);
     await res.user.updateProfile({ displayName: name });
     
-    // Extract domain from email (e.g., "lincolnhigh.org" from "teacher@lincolnhigh.org")
+    // Extract domain from email and get school prefix
+    // e.g., "teacher@millbrook.org" -> "millbrook"
     const emailDomain = email.split('@')[1];
+    const domainPrefix = emailDomain ? emailDomain.split('.')[0].toLowerCase() : '';
     
     // Create user doc in Firestore
     const userDoc = {
@@ -527,14 +529,14 @@ async function doRegister() {
       }
     }
     
-    // If not invited to a school, try to auto-assign based on email domain
-    if (!foundSchool && emailDomain) {
+    // If not invited, try to auto-assign based on email domain matching school name
+    if (!foundSchool && domainPrefix) {
       for (const schoolDoc of allSchools.docs) {
         const school = schoolDoc.data();
-        const schoolDomain = school.domain || '';
+        const schoolName = (school.name || '').toLowerCase();
         
-        // Check if email domain matches school domain
-        if (schoolDomain && emailDomain.toLowerCase() === schoolDomain.toLowerCase()) {
+        // Check if school name contains the domain prefix (e.g., "millbrook" in "Millbrook High School")
+        if (schoolName.includes(domainPrefix)) {
           // Auto-add user to school as "user" role
           await db.collection('schools').doc(schoolDoc.id)
             .collection('members').doc(email).set({
