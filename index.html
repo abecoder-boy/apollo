@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apollo — Multi-School PO & Check Request System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- Firebase SDKs (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    :root {
+      --bg-start:#4f46e5;--bg-mid:#7c3aed;--bg-end:#2563eb;
+      --card:#fff;--card-alt:#f8fafc;--text:#0f172a;--text-secondary:#475569;
+      --muted:#94a3b8;--line:#e2e8f0;--line-light:#f1f5f9;
+      --brand:#4f46e5;--brand-light:#eef2ff;--brand-dark:#4338ca;
+      --accent:#f59e0b;--accent-light:#fef3c7;
+      --cyan:#06b6d4;--cyan-light:#cffafe;
+      --ok:#10b981;--ok-light:#d1fae5;--ok-dark:#059669;
+      --no:#ef4444;--no-light:#fee2e2;--no-dark:#dc2626;
+      --shadow-lg:0 20px 60px rgba(0,0,0,.12);
+      --shadow-glow:0 0 80px rgba(99,102,241,.2);
+      --radius:18px;--radius-sm:12px;
+      --transition:.25s cubic-bezier(.4,0,.2,1);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit',sans-serif;background:linear-gradient(135deg,var(--bg-start) 0%,var(--bg-mid) 40%,var(--bg-end) 100%);color:white;min-height:100vh;display:flex;flex-direction:column;align-items:center;overflow-x:hidden}
+    body::before,body::after{content:'';position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+    body::before{width:600px;height:600px;top:-10%;right:-10%;background:radial-gradient(circle,rgba(236,72,153,.2) 0%,transparent 70%);animation:float1 16s ease-in-out infinite alternate}
+    body::after{width:500px;height:500px;bottom:-10%;left:-10%;background:radial-gradient(circle,rgba(6,182,212,.2) 0%,transparent 70%);animation:float2 20s ease-in-out infinite alternate}
+    @keyframes float1{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-60px,40px) scale(1.1)}}
+    @keyframes float2{0%{transform:translate(0,0) scale(1)}100%{transform:translate(50px,-30px) scale(1.15)}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    @keyframes modalIn{from{opacity:0;transform:scale(.95) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+
+    .topbar{width:100%;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;background:rgba(255,255,255,.1);border-bottom:1px solid rgba(255,255,255,.12);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+    .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.3px;color:#fff}
+    .logo-icon{width:38px;height:38px;background:white;color:var(--brand);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+    .school-badge{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.15);padding:6px 12px;border-radius:10px;font-size:12px;font-weight:600;color:white}
+    .nav-pills{display:flex;gap:4px;background:rgba(255,255,255,.12);border-radius:14px;padding:4px}
+    .nav-pill{border:none;background:transparent;color:rgba(255,255,255,.65);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;padding:9px 18px;border-radius:10px;cursor:pointer;transition:var(--transition);white-space:nowrap}
+    .nav-pill.active{background:white;color:var(--brand);box-shadow:0 2px 12px rgba(0,0,0,.1)}
+    .nav-pill:not(.active):hover{color:white;background:rgba(255,255,255,.12)}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    .user-badge{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.15);padding:6px 14px 6px 10px;border-radius:10px;font-size:13px;font-weight:600}
+    .user-badge::before{content:'';width:8px;height:8px;background:var(--ok);border-radius:50%;animation:pulse 2s infinite}
+    .logout-btn{border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:white;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;padding:7px 14px;border-radius:9px;cursor:pointer;transition:var(--transition)}
+    .logout-btn:hover{background:rgba(255,255,255,.2)}
+
+    .content-area{width:100%;flex:1;display:flex;justify-content:center;padding:32px 20px 48px;position:relative;z-index:5}
+    .screen{display:none;width:100%;justify-content:center}
+    .screen.active{display:flex}
+
+    .auth-wrap{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 40px);width:100%;padding:20px}
+    .auth-card{width:min(440px,100%);background:var(--card);color:var(--text);padding:40px 36px;border-radius:var(--radius);box-shadow:var(--shadow-lg),var(--shadow-glow);position:relative;overflow:hidden;animation:fadeUp .5s ease-out both}
+    .auth-card::before{content:'';position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#ec4899,#f59e0b,#06b6d4,#4f46e5)}
+    .auth-header{text-align:center;margin-bottom:28px}
+    .auth-logo{width:64px;height:64px;margin:0 auto 16px;background:linear-gradient(135deg,var(--brand),var(--bg-mid));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:white;box-shadow:0 8px 24px rgba(79,70,229,.3)}
+    .auth-title{font-size:24px;font-weight:900;letter-spacing:-.5px}
+    .auth-subtitle{color:var(--text-secondary);font-size:14px;margin-top:4px}
+    .auth-toggle{margin-top:20px;text-align:center;font-size:14px;color:var(--text-secondary)}
+    .auth-toggle a{color:var(--brand);font-weight:700;cursor:pointer;text-decoration:none}
+    .auth-toggle a:hover{text-decoration:underline}
+    .auth-error{display:none;margin-bottom:16px;padding:12px 14px;background:var(--no-light);border:2px solid #fca5a5;border-radius:var(--radius-sm);font-weight:700;font-size:13px;color:var(--no-dark)}
+    .auth-success{display:none;margin-bottom:16px;padding:12px 14px;background:var(--ok-light);border:2px solid #6ee7b7;border-radius:var(--radius-sm);font-weight:700;font-size:13px;color:var(--ok-dark)}
+
+    .form-card{background:var(--card);color:var(--text);padding:36px 32px;border-radius:var(--radius);box-shadow:var(--shadow-lg),var(--shadow-glow);position:relative;overflow:hidden}
+    .form-card::before{content:'';position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#ec4899,#f59e0b,#06b6d4,#4f46e5)}
+    .form-container{width:min(580px,100%);animation:fadeUp .5s ease-out both}
+    .form-header{text-align:center;margin-bottom:28px}
+    .form-header-icon{width:56px;height:56px;margin:0 auto 14px;background:linear-gradient(135deg,var(--brand-light),var(--cyan-light));border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px}
+    .form-title{font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--text)}
+    .form-subtitle{color:var(--text-secondary);font-size:14px;margin-top:4px;line-height:1.5}
+    .form-group{margin-bottom:18px}
+    .form-group label{display:block;font-weight:700;font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+    .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;color:var(--text);outline:none;transition:var(--transition);background:white;appearance:none}
+    .form-group select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:38px;cursor:pointer}
+    .form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-light)}
+    .form-group input[readonly]{background:var(--line-light);color:var(--muted);cursor:not-allowed}
+    .form-group textarea{min-height:80px;resize:vertical;line-height:1.5}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .form-hint{font-size:11px;color:var(--muted);margin-top:4px;font-weight:500}
+
+    .btn-primary{appearance:none;border:0;width:100%;padding:15px 20px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;border-radius:14px;cursor:pointer;transition:var(--transition);box-shadow:0 6px 20px rgba(79,70,229,.35);margin-top:10px}
+    .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(79,70,229,.45)}
+    .btn-primary:active{transform:translateY(0)}
+    .btn-primary:disabled{opacity:.6;cursor:not-allowed;transform:none}
+
+    .btn-secondary{appearance:none;border:2px solid var(--line);background:white;color:var(--text);padding:12px 20px;border-radius:12px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:var(--transition);display:inline-block}
+    .btn-secondary:hover{border-color:var(--brand);background:var(--brand-light)}
+
+    .schools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;width:100%;max-width:900px}
+    .school-card{background:var(--card);color:var(--text);padding:28px;border-radius:var(--radius);box-shadow:var(--shadow-lg);cursor:pointer;transition:var(--transition);border:2px solid transparent;animation:fadeUp .4s ease-out both}
+    .school-card:hover{border-color:var(--brand);transform:translateY(-4px);box-shadow:var(--shadow-lg),var(--shadow-glow)}
+    .school-name{font-size:20px;font-weight:900;color:var(--text);margin-bottom:8px}
+    .school-info{font-size:13px;color:var(--text-secondary);line-height:1.6}
+    .school-info span{display:block;margin-top:6px}
+
+    .modal-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+    .modal-backdrop.active{display:flex}
+    .modal{background:var(--card);color:var(--text);padding:36px 32px;border-radius:var(--radius);box-shadow:var(--shadow-lg),var(--shadow-glow);width:min(520px,95%);animation:modalIn .3s ease-out both}
+    .modal-header{font-size:22px;font-weight:900;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+    .modal-close{background:none;border:none;color:var(--text-secondary);font-size:24px;cursor:pointer;transition:var(--transition)}
+    .modal-close:hover{color:var(--text)}
+
+    .toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:white;padding:16px 24px;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);z-index:200;animation:fadeUp .3s ease;max-width:400px}
+    .toast.error{background:var(--no)}
+    .toast.success{background:var(--ok)}
+
+    .role-badge{display:inline-block;padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .role-admin{background:#fef08a;color:#713f12}
+    .role-approver{background:#bfdbfe;color:#1e3a8a}
+    .role-user{background:#dbeafe;color:#0c4a6e}
+
+    @media(max-width:600px){
+      .form-row{grid-template-columns:1fr}
+      .schools-grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+
+
+
+<!-- SCREEN: DEVELOPER CONSOLE -->
+<div class="screen" id="screenDeveloper">
+  <div style="width:100%;max-width:1200px">
+    <div class="topbar">
+      <div class="logo">
+        <div class="logo-icon">A</div>
+        <span>Apollo</span>
+        <div class="school-badge">Developer Console</div>
+      </div>
+      <div class="nav-pills">
+        <button class="nav-pill active" onclick="switchDevTab('schools')">Schools</button>
+        <button class="nav-pill" onclick="switchDevTab('create')">Create School</button>
+      </div>
+      <div class="topbar-right">
+        <div class="user-badge" id="userBadgeDev">Developer</div>
+        <button class="logout-btn" onclick="doLogout()">Logout</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <!-- Developer: Schools List -->
+      <div class="screen active" id="devTabSchools">
+        <div class="form-container">
+          <div class="form-header">
+            <div class="form-header-icon">🏫</div>
+            <h2 class="form-title">All Schools</h2>
+            <p class="form-subtitle">Manage schools and admins</p>
+          </div>
+          <div id="allSchoolsList"></div>
+        </div>
+      </div>
+
+      <!-- Developer: Create School -->
+      <div class="screen" id="devTabCreate">
+        <div class="form-card">
+          <div class="form-header">
+            <div class="form-header-icon">➕</div>
+            <h2 class="form-title">Create New School</h2>
+            <p class="form-subtitle">Set up a school and assign an admin</p>
+          </div>
+
+          <div class="form-group">
+            <label>School Name</label>
+            <input type="text" id="devSchoolName" placeholder="e.g., Lincoln High School">
+          </div>
+
+          <div class="form-group">
+            <label>School Admin Email</label>
+            <input type="email" id="devAdminEmail" placeholder="admin@school.edu">
+          </div>
+
+          <div class="form-group">
+            <label>Admin Name</label>
+            <input type="text" id="devAdminName" placeholder="e.g., John Smith">
+          </div>
+
+          <button class="btn-primary" onclick="devCreateSchoolWithAdmin()">Create School & Assign Admin</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: DASHBOARD -->
+<div class="screen" id="screenDashboard">
+  <div style="width:100%;max-width:1200px">
+    <div class="topbar">
+      <div class="logo">
+        <div class="logo-icon">A</div>
+        <span>Apollo</span>
+        <div class="school-badge" id="currentSchoolBadge">School Name</div>
+      </div>
+      <div class="nav-pills">
+        <button class="nav-pill active" onclick="switchTab('dashboard')">Dashboard</button>
+        <button class="nav-pill" onclick="switchTab('po')">Purchase Orders</button>
+        <button class="nav-pill" onclick="switchTab('check')">Check Requests</button>
+        <button class="nav-pill" onclick="switchTab('reports')">Reports</button>
+        <button class="nav-pill" onclick="switchTab('settings')">Settings</button>
+      </div>
+      <div class="topbar-right">
+        <div class="user-badge" id="userBadge">User</div>
+        <button class="logout-btn" onclick="doLogout()">Logout</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <!-- TAB: Dashboard -->
+      <div class="screen active" id="tabDashboard">
+        <div class="form-container">
+          <div class="form-header">
+            <div class="form-header-icon">📊</div>
+            <h2 class="form-title">Dashboard</h2>
+            <p class="form-subtitle" id="schoolName">Welcome</p>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px">
+            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+              <div style="font-size:32px;margin-bottom:8px">📋</div>
+              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Pending POs</div>
+              <div style="font-size:28px;font-weight:900;color:var(--brand);margin-top:8px" id="dashPending">0</div>
+            </div>
+            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+              <div style="font-size:32px;margin-bottom:8px">✅</div>
+              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Total Approved</div>
+              <div style="font-size:28px;font-weight:900;color:var(--ok);margin-top:8px" id="dashApproved">$0</div>
+            </div>
+            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+              <div style="font-size:32px;margin-bottom:8px">👥</div>
+              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">School Users</div>
+              <div style="font-size:28px;font-weight:900;color:var(--cyan);margin-top:8px" id="dashUsers">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Settings -->
+      <div class="screen" id="tabSettings">
+        <div class="form-container">
+          <div class="form-header">
+            <div class="form-header-icon">⚙️</div>
+            <h2 class="form-title">School Settings</h2>
+            <p class="form-subtitle">Manage users and roles</p>
+          </div>
+          <div style="margin-bottom:28px">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px">School Users</h3>
+            <div style="background:var(--card-alt);border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--line)" id="usersList">
+              <div style="padding:16px;text-align:center;color:var(--muted)">Loading users...</div>
+            </div>
+          </div>
+          <div style="margin-top:28px;padding-top:28px;border-top:1px solid var(--line)">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px">Add User to School</h3>
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" id="inviteEmail" placeholder="user@example.com">
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select id="inviteRole">
+                <option value="user">User</option>
+                <option value="approver">Approver</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button class="btn-primary" onclick="inviteUserToSchool()">Send Invitation</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Placeholder for other tabs -->
+      <div class="screen" id="tabPO">
+        <div class="form-card">
+          <p>Purchase Orders section (use your existing code)</p>
+        </div>
+      </div>
+      <div class="screen" id="tabCheck">
+        <div class="form-card">
+          <p>Check Requests section (use your existing code)</p>
+        </div>
+      </div>
+      <div class="screen" id="tabReports">
+        <div class="form-card">
+          <p>Reports section (use your existing code)</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div class="screen active" id="screenLogin">
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">A</div>
+        <h2 class="auth-title">Apollo</h2>
+        <p class="auth-subtitle">Multi-School PO Management</p>
+      </div>
+
+      <div class="auth-error" id="loginError"></div>
+      <div class="auth-success" id="loginSuccess"></div>
+
+      <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:20px">
+        <button class="nav-pill active" onclick="showLoginForm('login')" style="flex:1;font-size:13px">Login</button>
+        <button class="nav-pill" onclick="showLoginForm('register')" style="flex:1;font-size:13px">Register</button>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <div id="loginForm">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-pw" placeholder="••••••••">
+        </div>
+        <button class="btn-primary" onclick="doLogin()">Sign In</button>
+      </div>
+
+      <!-- REGISTER FORM -->
+      <div id="registerForm" style="display:none">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="reg-name" placeholder="John Doe">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="reg-email" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="reg-pw" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" id="reg-pw2" placeholder="••••••••">
+        </div>
+        <button class="btn-primary" onclick="doRegister()">Create Account</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" id="modalContent">
+    <!-- Dynamic content -->
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// FIREBASE INIT
+// ═══════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyAe4z-HKBgREGRdnuI7Gx3DJTO_Pq_enxQ",
+  authDomain: "apollo-1022e.firebaseapp.com",
+  projectId: "apollo-1022e",
+  storageBucket: "apollo-1022e.firebasestorage.app",
+  messagingSenderId: "202856019438",
+  appId: "1:202856019438:web:debcae42e2b06122b24aff"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let currentUser = null;
+let currentSchool = null;
+let currentSchoolId = null;
+let userRole = null;
+let userSchools = [];
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('userBadge').textContent = user.email;
+    
+    // Check if user is developer
+    if (user.email === 'abe.staats21@gmail.com') {
+      showScreen('screenDeveloper');
+    } else {
+      await loadUserSchools();
+      // Auto-select first school and go to dashboard
+      await autoSelectSchool();
+    }
+  } else {
+    showScreen('screenLogin');
+  }
+});
+
+async function autoSelectSchool() {
+  try {
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    if (!userDoc.exists) {
+      showToast('User profile not found', 'error');
+      return;
+    }
+    
+    const userData = userDoc.data();
+    const schoolIds = Object.keys(userData.schools || {});
+    
+    if (schoolIds.length === 0) {
+      showToast('Not assigned to any school', 'error');
+      return;
+    }
+
+    // Use first school
+    const schoolId = schoolIds[0];
+    const schoolDoc = await db.collection('schools').doc(schoolId).get();
+    
+    if (schoolDoc.exists) {
+      const school = schoolDoc.data();
+      selectSchool(schoolId, school.name);
+    }
+  } catch (error) {
+    console.error('Error auto-selecting school:', error);
+    showToast('Error loading school', 'error');
+  }
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-pw').value;
+  
+  if (!email || !pw) {
+    showAuthError('Please fill in all fields');
+    return;
+  }
+
+  try {
+    await auth.signInWithEmailAndPassword(email, pw);
+    showAuthSuccess('Logged in!');
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+async function doRegister() {
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pw = document.getElementById('reg-pw').value;
+  const pw2 = document.getElementById('reg-pw2').value;
+  
+  if (!name || !email || !pw || !pw2) {
+    showAuthError('Please fill in all fields');
+    return;
+  }
+  
+  if (pw !== pw2) {
+    showAuthError('Passwords do not match');
+    return;
+  }
+
+  try {
+    const res = await auth.createUserWithEmailAndPassword(email, pw);
+    await res.user.updateProfile({ displayName: name });
+    
+    // Create user doc in Firestore
+    const userDoc = {
+      email: email,
+      name: name,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      schools: {}
+    };
+
+    // Check if this email is in any school's pending members
+    const allSchools = await db.collection('schools').get();
+    for (const schoolDoc of allSchools.docs) {
+      const memberDoc = await db.collection('schools').doc(schoolDoc.id)
+        .collection('members').doc(email).get();
+      
+      if (memberDoc.exists) {
+        const member = memberDoc.data();
+        if (member.status === 'pending') {
+          // Activate this member
+          await db.collection('schools').doc(schoolDoc.id)
+            .collection('members').doc(email).update({
+              userId: res.user.uid,
+              status: 'active'
+            });
+          
+          // Add school to user's schools
+          userDoc.schools[schoolDoc.id] = member.role;
+        }
+      }
+    }
+
+    await db.collection('users').doc(res.user.uid).set(userDoc);
+    
+    showAuthSuccess('Account created! Please log in.');
+    setTimeout(() => showLoginForm('login'), 1500);
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+function doLogout() {
+  auth.signOut();
+}
+
+function showLoginForm(form) {
+  document.getElementById('loginForm').style.display = form === 'login' ? 'block' : 'none';
+  document.getElementById('registerForm').style.display = form === 'register' ? 'block' : 'none';
+  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+function showAuthSuccess(msg) {
+  const el = document.getElementById('loginSuccess');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEVELOPER CONSOLE FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+function switchDevTab(tabName) {
+  document.querySelectorAll('#screenDeveloper .nav-pill').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  
+  const tabMap = {
+    'schools': 'devTabSchools',
+    'create': 'devTabCreate'
+  };
+  
+  document.querySelectorAll('#screenDeveloper [id^="devTab"]').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabMap[tabName]).classList.add('active');
+  
+  if (tabName === 'schools') {
+    devLoadAllSchools();
+  }
+}
+
+async function devLoadAllSchools() {
+  try {
+    const snapshot = await db.collection('schools').get();
+    let html = '';
+
+    if (snapshot.empty) {
+      html = '<div style="text-align:center;color:var(--text-secondary);padding:40px">No schools yet</div>';
+    } else {
+      html = '<div style="display:grid;gap:16px">';
+      
+      for (const doc of snapshot.docs) {
+        const school = doc.data();
+        const membersSnap = await db.collection('schools').doc(doc.id).collection('members').get();
+        const memberCount = membersSnap.size;
+        
+        html += `
+          <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+            <div style="display:flex;justify-content:space-between;align-items:start">
+              <div style="flex:1">
+                <div style="font-size:18px;font-weight:900;color:var(--text)">${esc(school.name)}</div>
+                <div style="font-size:13px;color:var(--text-secondary);margin-top:8px">
+                  <div>Admin: ${esc(school.adminEmail)}</div>
+                  <div style="margin-top:4px">${memberCount} member${memberCount !== 1 ? 's' : ''}</div>
+                </div>
+              </div>
+              <button class="btn-secondary" onclick="devViewSchoolDetails('${doc.id}')">Manage</button>
+            </div>
+          </div>
+        `;
+      }
+      html += '</div>';
+    }
+    
+    document.getElementById('allSchoolsList').innerHTML = html;
+  } catch (error) {
+    console.error('Error loading schools:', error);
+    showToast('Error loading schools', 'error');
+  }
+}
+
+async function devCreateSchoolWithAdmin() {
+  const schoolName = document.getElementById('devSchoolName').value.trim();
+  const adminEmail = document.getElementById('devAdminEmail').value.trim();
+  const adminName = document.getElementById('devAdminName').value.trim();
+
+  if (!schoolName || !adminEmail || !adminName) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+
+  try {
+    // Create school
+    const schoolRef = await db.collection('schools').add({
+      name: schoolName,
+      adminEmail: adminEmail,
+      adminId: null, // Will be set when admin creates account
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid
+    });
+
+    // Add admin to school members
+    await db.collection('schools').doc(schoolRef.id).collection('members').doc(adminEmail).set({
+      email: adminEmail,
+      name: adminName,
+      role: 'admin',
+      userId: null,
+      status: 'pending',
+      addedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Create placeholder user doc for admin (they'll complete signup later)
+    // Actually, let's skip this - they'll create it when they register
+
+    showToast(`✅ School created! Admin invitation sent to ${adminEmail}`);
+    document.getElementById('devSchoolName').value = '';
+    document.getElementById('devAdminEmail').value = '';
+    document.getElementById('devAdminName').value = '';
+    
+    // Reload schools list
+    await devLoadAllSchools();
+    document.querySelector('#screenDeveloper .nav-pill').click();
+  } catch (error) {
+    showToast('Error creating school: ' + error.message, 'error');
+  }
+}
+
+async function devViewSchoolDetails(schoolId) {
+  try {
+    const schoolDoc = await db.collection('schools').doc(schoolId).get();
+    const school = schoolDoc.data();
+    const membersSnap = await db.collection('schools').doc(schoolId).collection('members').get();
+    
+    let membersHtml = '';
+    membersSnap.forEach(doc => {
+      const member = doc.data();
+      membersHtml += `
+        <div style="padding:12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between">
+          <div>
+            <div style="font-weight:700">${esc(member.email)}</div>
+            <div style="font-size:12px;color:var(--text-secondary)">${member.name}</div>
+          </div>
+          <div>
+            <span class="role-badge role-${member.role}">${member.role}</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:12px">${member.status || 'active'}</span>
+          </div>
+        </div>
+      `;
+    });
+
+    const html = `
+      <div class="modal-header">
+        <span>${esc(school.name)}</span>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;margin-bottom:8px">Admin</div>
+        <div style="font-weight:700">${esc(school.adminEmail)}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;margin-bottom:8px">Members (${membersSnap.size})</div>
+        <div style="border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden">
+          ${membersHtml || '<div style="padding:16px;text-align:center;color:var(--muted)">No members</div>'}
+        </div>
+      </div>
+      <button class="btn-secondary" style="width:100%;margin-top:20px" onclick="closeModal()">Close</button>
+    `;
+
+    document.getElementById('modalContent').innerHTML = html;
+    document.getElementById('modalBackdrop').classList.add('active');
+  } catch (error) {
+    showToast('Error loading school: ' + error.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCHOOL FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+async function loadUserSchools() {
+  try {
+    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    if (!userDoc.exists) {
+      console.log('User doc not found');
+      return;
+    }
+    
+    const userData = userDoc.data();
+    userSchools = Object.keys(userData.schools || {});
+    
+    if (userSchools.length === 0) {
+      showToast('Not assigned to any school. Contact your admin.', 'error');
+    }
+  } catch (error) {
+    console.error('Error loading schools:', error);
+  }
+}
+
+function selectSchool(schoolId, schoolName) {
+  currentSchoolId = schoolId;
+  currentSchool = schoolName;
+  document.getElementById('currentSchoolBadge').textContent = schoolName;
+  document.getElementById('schoolName').textContent = `Welcome to ${schoolName}`;
+  loadSchoolData();
+  showScreen('screenDashboard');
+}
+
+async function loadSchoolData() {
+  try {
+    // Load school info
+    const schoolDoc = await db.collection('schools').doc(currentSchoolId).get();
+    if (schoolDoc.exists) {
+      const school = schoolDoc.data();
+      // Update dashboard with school data
+      document.getElementById('dashPending').textContent = '0';
+      document.getElementById('dashApproved').textContent = '$0';
+    }
+
+    // Load school users
+    loadSchoolUsers();
+  } catch (error) {
+    console.error('Error loading school data:', error);
+  }
+}
+
+async function loadSchoolUsers() {
+  try {
+    const usersSnap = await db.collection('schools').doc(currentSchoolId).collection('members').get();
+    let html = '';
+    
+    if (usersSnap.empty) {
+      html = '<div style="padding:16px;text-align:center;color:var(--muted)">No users yet</div>';
+    } else {
+      usersSnap.forEach(doc => {
+        const member = doc.data();
+        html += `
+          <div style="padding:14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-weight:700;color:var(--text)">${esc(member.email)}</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${member.name || 'No name'}</div>
+            </div>
+            <span class="role-badge role-${member.role}">${member.role}</span>
+          </div>
+        `;
+      });
+    }
+    
+    document.getElementById('usersList').innerHTML = html;
+  } catch (error) {
+    console.error('Error loading users:', error);
+  }
+}
+
+async function inviteUserToSchool() {
+  const email = document.getElementById('inviteEmail').value.trim();
+  const role = document.getElementById('inviteRole').value;
+  
+  if (!email) {
+    showToast('Please enter an email', 'error');
+    return;
+  }
+
+  try {
+    // Add user to school members collection
+    // In production, you'd send an email invitation
+    await db.collection('schools').doc(currentSchoolId).collection('members').doc(email).set({
+      email: email,
+      role: role,
+      name: 'Pending',
+      status: 'pending',
+      addedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    showToast(`✅ Invitation sent to ${email}`);
+    document.getElementById('inviteEmail').value = '';
+    document.getElementById('inviteRole').value = 'user';
+    loadSchoolUsers();
+  } catch (error) {
+    showToast('Error sending invitation: ' + error.message, 'error');
+  }
+}
+
+function showCreateSchoolModal() {
+  const html = `
+    <div class="modal-header">
+      <span>Create New School</span>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="form-group">
+      <label>School Name</label>
+      <input type="text" id="newSchoolName" placeholder="Lincoln High School">
+    </div>
+    <button class="btn-primary" onclick="createSchool()">Create School</button>
+  `;
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalBackdrop').classList.add('active');
+}
+
+async function createSchool() {
+  const name = document.getElementById('newSchoolName').value.trim();
+  
+  if (!name) {
+    showToast('Please enter a school name', 'error');
+    return;
+  }
+
+  try {
+    const docRef = await db.collection('schools').add({
+      name: name,
+      adminEmail: currentUser.email,
+      adminId: currentUser.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Add admin as a member
+    await db.collection('schools').doc(docRef.id).collection('members').doc(currentUser.email).set({
+      email: currentUser.email,
+      name: currentUser.displayName || 'Admin',
+      role: 'admin',
+      userId: currentUser.uid,
+      addedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Add school to user's schools
+    await db.collection('users').doc(currentUser.uid).update({
+      ['schools.' + docRef.id]: 'admin'
+    });
+
+    closeModal();
+    showToast('✅ School created!');
+    await loadUserSchools();
+  } catch (error) {
+    showToast('Error creating school: ' + error.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UI UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function showScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  
+  const tabMap = {
+    'dashboard': 'tabDashboard',
+    'po': 'tabPO',
+    'check': 'tabCheck',
+    'reports': 'tabReports',
+    'settings': 'tabSettings'
+  };
+  
+  document.querySelectorAll('[id^="tab"]').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabMap[tabName]).classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('active');
+}
+
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast ' + type;
+  setTimeout(() => toast.className = 'toast', 3000);
+}
+
+function esc(v) {
+  if (v == null) return '';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Enter key support
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('login-pw').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('login-email').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('reg-pw2').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doRegister();
+  });
+});
+</script>
+
+</body>
+</html>
