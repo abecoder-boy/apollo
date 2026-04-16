@@ -235,53 +235,83 @@
     <div class="content-area">
       <!-- TAB: Dashboard -->
       <div class="screen active" id="tabDashboard">
-        <div class="form-container">
-          <div class="form-header">
-            <div class="form-header-icon">📊</div>
-            <h2 class="form-title">Dashboard</h2>
-            <p class="form-subtitle" id="schoolName">Welcome</p>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px">
-            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
-              <div style="font-size:32px;margin-bottom:8px">📋</div>
-              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Pending POs</div>
-              <div style="font-size:28px;font-weight:900;color:var(--brand);margin-top:8px" id="dashPending">0</div>
+        <div class="form-container" style="max-width:960px">
+          <div class="form-card" style="padding:36px 32px">
+            <div class="form-header">
+              <div class="form-header-icon">📊</div>
+              <h2 class="form-title">Dashboard</h2>
+              <p class="form-subtitle" id="schoolName">Welcome</p>
             </div>
-            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
-              <div style="font-size:32px;margin-bottom:8px">✅</div>
-              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Total Approved</div>
-              <div style="font-size:28px;font-weight:900;color:var(--ok);margin-top:8px" id="dashApproved">$0</div>
-            </div>
-            <div class="form-card" style="border:none;box-shadow:0 4px 12px rgba(0,0,0,.08)">
-              <div style="font-size:32px;margin-bottom:8px">👥</div>
-              <div style="font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">School Users</div>
-              <div style="font-size:28px;font-weight:900;color:var(--cyan);margin-top:8px" id="dashUsers">0</div>
-            </div>
-          </div>
-          
-          <!-- MY SUBMISSIONS SECTION -->
-          <div style="margin-top:40px;padding-top:40px;border-top:1px solid var(--line)">
-            <div style="margin-bottom:20px">
-              <h3 style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">My Submissions</h3>
-              <p style="font-size:13px;color:var(--text-secondary)">Track your Purchase Orders and Check Requests</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+              <div style="padding:22px 20px;background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm)">
+                <div style="font-size:28px;margin-bottom:6px">📋</div>
+                <div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Pending POs</div>
+                <div style="font-size:28px;font-weight:900;color:var(--brand-dark);margin-top:6px" id="dashPending">0</div>
+              </div>
+              <div style="padding:22px 20px;background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm)">
+                <div style="font-size:28px;margin-bottom:6px">✅</div>
+                <div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Total Approved</div>
+                <div style="font-size:28px;font-weight:900;color:var(--ok-dark);margin-top:6px" id="dashApproved">$0</div>
+              </div>
+              <div style="padding:22px 20px;background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm)">
+                <div style="font-size:28px;margin-bottom:6px">👥</div>
+                <div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;font-weight:700">School Users</div>
+                <div style="font-size:28px;font-weight:900;color:var(--brand-dark);margin-top:6px" id="dashUsers">0</div>
+              </div>
             </div>
             
-            <div style="overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--card-alt)">
-              <table style="width:100%;border-collapse:collapse;font-size:13px">
-                <thead style="background:var(--card);border-bottom:2px solid var(--line)">
-                  <tr>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">Type</th>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">ID</th>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">Amount/Details</th>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">Status</th>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">Submitted</th>
-                    <th style="padding:12px;text-align:left;font-weight:700;color:var(--text)">Updated</th>
-                  </tr>
-                </thead>
-                <tbody id="mySubmissionsTable">
-                  <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>
-                </tbody>
-              </table>
+            <!-- PENDING APPROVALS SECTION (visible only to approvers/admins with pending items) -->
+            <div id="pendingApprovalsSection" style="display:none;margin-top:36px;padding-top:28px;border-top:1px solid var(--line)">
+              <div style="margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <h3 style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px">⏳ Pending Approvals <span id="pendingApprovalsCount" style="background:var(--brand);color:#1a1408;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:900;margin-left:6px;vertical-align:middle">0</span></h3>
+                  <p style="font-size:13px;color:var(--text-secondary)">Requests waiting for your decision</p>
+                </div>
+              </div>
+              
+              <div style="overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--line)">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;background:white">
+                  <thead style="background:var(--card-alt);border-bottom:2px solid var(--line)">
+                    <tr>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Type</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">ID</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Requested By</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Amount/Details</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Submitted</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="pendingApprovalsTable">
+                    <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- MY SUBMISSIONS SECTION -->
+            <div style="margin-top:36px;padding-top:28px;border-top:1px solid var(--line)">
+              <div style="margin-bottom:18px">
+                <h3 style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px">My Submissions</h3>
+                <p style="font-size:13px;color:var(--text-secondary)">Track your Purchase Orders and Check Requests</p>
+              </div>
+              
+              <div style="overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--line)">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;background:white">
+                  <thead style="background:var(--card-alt);border-bottom:2px solid var(--line)">
+                    <tr>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Type</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">ID</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Amount/Details</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Status</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Submitted</th>
+                      <th style="padding:12px;text-align:left;font-weight:800;color:var(--text);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mySubmissionsTable">
+                    <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -409,6 +439,18 @@
             <div id="rptTable" style="margin-top:20px"></div>
             <div id="rptEmpty" style="text-align:center;color:var(--text-secondary);padding:40px"></div>
             <div style="padding:16px;text-align:right;color:var(--muted);font-size:13px;font-weight:600" id="rptCount"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Detail (request view + approve/deny) -->
+      <div class="screen" id="tabDetail">
+        <div class="form-container" style="max-width:780px">
+          <div style="margin-bottom:18px">
+            <button class="btn-secondary" onclick="switchTab('dashboard')" style="background:rgba(255,255,255,.06);border:1px solid rgba(212,162,74,.3);color:#f0d89a">← Back to Dashboard</button>
+          </div>
+          <div class="form-card" id="detailCard">
+            <div style="padding:40px;text-align:center;color:var(--text-secondary)">Loading…</div>
           </div>
         </div>
       </div>
@@ -1005,8 +1047,9 @@ async function loadSchoolData() {
     // Load school users
     loadSchoolUsers();
     
-    // Load user's submissions
+    // Load user's submissions + pending approvals
     loadMySubmissions();
+    loadPendingApprovals();
   } catch (error) {
     console.error('Error loading school data:', error);
   }
@@ -1405,8 +1448,18 @@ function showScreen(screenId) {
 }
 
 function switchTab(tabName) {
-  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
-  event.target.classList.add('active');
+  // Highlight the right nav pill — works both for real clicks and programmatic calls
+  document.querySelectorAll('#screenDashboard .nav-pill').forEach(p => p.classList.remove('active'));
+  if (typeof event !== 'undefined' && event && event.target && event.target.classList) {
+    event.target.classList.add('active');
+  } else {
+    // Programmatic call (e.g. from detail view Back button) — highlight by matching onclick text
+    document.querySelectorAll('#screenDashboard .nav-pill').forEach(p => {
+      if ((p.getAttribute('onclick') || '').includes(`switchTab('${tabName}')`)) {
+        p.classList.add('active');
+      }
+    });
+  }
   
   const tabMap = {
     'dashboard': 'tabDashboard',
@@ -1416,12 +1469,18 @@ function switchTab(tabName) {
     'settings': 'tabSettings'
   };
   
-  document.querySelectorAll('[id^="tab"]').forEach(t => t.classList.remove('active'));
-  document.getElementById(tabMap[tabName]).classList.add('active');
+  // Hide all content tabs (including tabDetail which isn't in tabMap)
+  document.querySelectorAll('[id^="tab"]').forEach(t => {
+    t.classList.remove('active');
+    t.style.display = '';
+  });
+  const target = document.getElementById(tabMap[tabName]);
+  if (target) target.classList.add('active');
   
   // Load submissions when Dashboard tab is opened
   if (tabName === 'dashboard') {
     loadMySubmissions();
+    loadPendingApprovals();
   }
   
   // Load approvers when PO tab is opened
@@ -1451,6 +1510,26 @@ function prefillCheckForm() {
   }
 }
 
+// Convert any timestamp-shaped value into a JS Date (shared util)
+function _toDate(v) {
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate();
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') return new Date(v);
+  if (typeof v === 'string') { const d = new Date(v); return isNaN(d) ? null : d; }
+  if (v.seconds) return new Date(v.seconds * 1000);
+  return null;
+}
+function _fmtDate(d) { return d ? d.toLocaleDateString() : '—'; }
+function _fmtTime(d) { return d ? d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : ''; }
+function _statusStyle(status) {
+  const s = String(status || '').toLowerCase();
+  return {
+    color: s === 'approved' ? 'var(--ok-dark)' : s === 'denied' ? 'var(--no-dark)' : 'var(--brand-dark)',
+    bg:    s === 'approved' ? 'var(--ok-light)' : s === 'denied' ? 'var(--no-light)' : 'var(--brand-light)'
+  };
+}
+
 async function loadMySubmissions() {
   const tbody = document.getElementById('mySubmissionsTable');
   if (!tbody) return;
@@ -1460,53 +1539,34 @@ async function loadMySubmissions() {
   }
 
   try {
-    // Query each collection independently — if one fails (e.g. missing index, no data),
-    // we still render the other. Avoid compound where+orderBy (needs a composite index);
-    // sort in JS instead.
     const poRef = db.collection('schools').doc(currentSchoolId).collection('purchaseOrders');
     const checkRef = db.collection('schools').doc(currentSchoolId).collection('checkRequests');
 
     async function safeFetch(ref) {
-      // Try querying by UID; fall back to email if nothing or if the records were
-      // written with a different createdBy shape (older data).
       const byUid = await ref.where('createdBy', '==', currentUser.uid).get().catch(() => null);
       if (byUid && !byUid.empty) return byUid.docs;
       const byEmail = await ref.where('requestorEmail', '==', currentUser.email).get().catch(() => null);
       if (byEmail && !byEmail.empty) return byEmail.docs;
-      // Check Requests use 'email' instead of 'requestorEmail'
       const byEmail2 = await ref.where('email', '==', currentUser.email).get().catch(() => null);
       if (byEmail2 && !byEmail2.empty) return byEmail2.docs;
       return [];
     }
 
-    const [poDocs, checkDocs] = await Promise.all([
-      safeFetch(poRef),
-      safeFetch(checkRef)
-    ]);
-
-    // Utility: coerce any timestamp-shaped value into a JS Date
-    const toDate = (v) => {
-      if (!v) return null;
-      if (typeof v.toDate === 'function') return v.toDate();
-      if (v instanceof Date) return v;
-      if (typeof v === 'number') return new Date(v);
-      if (typeof v === 'string') { const d = new Date(v); return isNaN(d) ? null : d; }
-      if (v.seconds) return new Date(v.seconds * 1000);
-      return null;
-    };
-
+    const [poDocs, checkDocs] = await Promise.all([safeFetch(poRef), safeFetch(checkRef)]);
     const rows = [];
 
     poDocs.forEach(doc => {
       const data = doc.data() || {};
       const price = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
       rows.push({
+        kind: 'po',
+        docId: doc.id,
         type: '📋 PO',
         id: data.poNumber || doc.id,
         details: `${data.vendor || 'Unknown vendor'} — $${price.toFixed(2)}`,
         status: data.status || 'Pending',
-        createdAt: toDate(data.createdAt),
-        updatedAt: toDate(data.updatedAt) || toDate(data.createdAt)
+        createdAt: _toDate(data.createdAt),
+        updatedAt: _toDate(data.updatedAt) || _toDate(data.createdAt)
       });
     });
 
@@ -1514,16 +1574,17 @@ async function loadMySubmissions() {
       const data = doc.data() || {};
       const amt = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0;
       rows.push({
+        kind: 'check',
+        docId: doc.id,
         type: '🧾 Check',
         id: data.checkNumber || doc.id,
         details: `${data.category || 'Check request'} — $${amt.toFixed(2)}`,
         status: data.status || 'Pending',
-        createdAt: toDate(data.createdAt),
-        updatedAt: toDate(data.updatedAt) || toDate(data.createdAt)
+        createdAt: _toDate(data.createdAt),
+        updatedAt: _toDate(data.updatedAt) || _toDate(data.createdAt)
       });
     });
 
-    // Sort newest first, nulls last
     rows.sort((a, b) => {
       const ta = a.createdAt ? a.createdAt.getTime() : 0;
       const tb = b.createdAt ? b.createdAt.getTime() : 0;
@@ -1535,33 +1596,287 @@ async function loadMySubmissions() {
       return;
     }
 
-    // Cap the display to 20 most recent to keep the dashboard snappy
     const display = rows.slice(0, 20);
-
-    const fmtDate = (d) => d ? d.toLocaleDateString() : '—';
-    const fmtTime = (d) => d ? d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
-
     let html = '';
     display.forEach(row => {
-      const s = String(row.status).toLowerCase();
-      const statusColor = s === 'approved' ? 'var(--ok-dark)' : s === 'denied' ? 'var(--no-dark)' : 'var(--brand-dark)';
-      const statusBg    = s === 'approved' ? 'var(--ok-light)' : s === 'denied' ? 'var(--no-light)' : 'var(--brand-light)';
-      html += `<tr style="border-bottom:1px solid var(--line)">
-        <td style="padding:12px">${esc(row.type)}</td>
-        <td style="padding:12px;font-weight:700">${esc(row.id)}</td>
-        <td style="padding:12px">${esc(row.details)}</td>
+      const st = _statusStyle(row.status);
+      html += `<tr onclick="openDetail('${row.kind}','${esc(row.docId)}')" style="border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s;color:var(--text)" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+        <td style="padding:12px;color:var(--text)">${esc(row.type)}</td>
+        <td style="padding:12px;font-weight:700;color:var(--brand-dark)">${esc(row.id)}</td>
+        <td style="padding:12px;color:var(--text)">${esc(row.details)}</td>
         <td style="padding:12px">
-          <span style="background:${statusBg};color:${statusColor};padding:4px 8px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(row.status)}</span>
+          <span style="background:${st.bg};color:${st.color};padding:4px 8px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(row.status)}</span>
         </td>
-        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${fmtDate(row.createdAt)}<br>${fmtTime(row.createdAt)}</td>
-        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${fmtDate(row.updatedAt)}<br>${fmtTime(row.updatedAt)}</td>
+        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.createdAt)}<br>${_fmtTime(row.createdAt)}</td>
+        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.updatedAt)}<br>${_fmtTime(row.updatedAt)}</td>
       </tr>`;
     });
-
     tbody.innerHTML = html;
   } catch (error) {
     console.error('Error loading submissions:', error);
     tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Could not load submissions (${esc(error.code || error.message || 'unknown error')}).</td></tr>`;
+  }
+}
+
+// ───────────────── Pending Approvals (for approvers/admins) ─────────────────
+async function loadPendingApprovals() {
+  const section = document.getElementById('pendingApprovalsSection');
+  const tbody = document.getElementById('pendingApprovalsTable');
+  const badge = document.getElementById('pendingApprovalsCount');
+  if (!section || !tbody) return;
+
+  // Only approvers/admins see this section
+  if (userRole !== 'admin' && userRole !== 'approver') {
+    section.style.display = 'none';
+    return;
+  }
+  if (!currentSchoolId || !currentUser) return;
+
+  try {
+    const poRef = db.collection('schools').doc(currentSchoolId).collection('purchaseOrders');
+    const checkRef = db.collection('schools').doc(currentSchoolId).collection('checkRequests');
+    const email = currentUser.email;
+
+    // Pending + approver == me. Single-field filters so no composite index needed.
+    // We apply the status filter in JS to tolerate casing variance ("pending" vs "Pending").
+    const [poSnap, checkSnap] = await Promise.all([
+      poRef.where('approver', '==', email).get().catch(() => null),
+      checkRef.where('approver', '==', email).get().catch(() => null)
+    ]);
+
+    const rows = [];
+    const isPending = (s) => String(s || '').toLowerCase() === 'pending';
+
+    if (poSnap) poSnap.forEach(doc => {
+      const data = doc.data() || {};
+      if (!isPending(data.status)) return;
+      const price = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
+      rows.push({
+        kind: 'po', docId: doc.id,
+        type: '📋 PO', id: data.poNumber || doc.id,
+        requestedBy: data.requestorEmail || data.createdByEmail || '—',
+        details: `${data.vendor || 'Unknown vendor'} — $${price.toFixed(2)}`,
+        createdAt: _toDate(data.createdAt)
+      });
+    });
+
+    if (checkSnap) checkSnap.forEach(doc => {
+      const data = doc.data() || {};
+      if (!isPending(data.status)) return;
+      const amt = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0;
+      rows.push({
+        kind: 'check', docId: doc.id,
+        type: '🧾 Check', id: data.checkNumber || doc.id,
+        requestedBy: data.email || data.requestorEmail || data.name || '—',
+        details: `${data.category || 'Check request'} — $${amt.toFixed(2)}`,
+        createdAt: _toDate(data.createdAt)
+      });
+    });
+
+    rows.sort((a, b) => {
+      const ta = a.createdAt ? a.createdAt.getTime() : 0;
+      const tb = b.createdAt ? b.createdAt.getTime() : 0;
+      return tb - ta;
+    });
+
+    if (rows.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    if (badge) badge.textContent = rows.length;
+
+    let html = '';
+    rows.forEach(row => {
+      html += `<tr onclick="openDetail('${row.kind}','${esc(row.docId)}')" style="border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s;color:var(--text)" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+        <td style="padding:12px;color:var(--text)">${esc(row.type)}</td>
+        <td style="padding:12px;font-weight:700;color:var(--brand-dark)">${esc(row.id)}</td>
+        <td style="padding:12px;font-size:13px;color:var(--text)">${esc(row.requestedBy)}</td>
+        <td style="padding:12px;color:var(--text)">${esc(row.details)}</td>
+        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.createdAt)}<br>${_fmtTime(row.createdAt)}</td>
+        <td style="padding:12px;text-align:right">
+          <span style="display:inline-block;padding:6px 12px;background:var(--brand);color:#1a1408;border-radius:8px;font-weight:700;font-size:12px">Review →</span>
+        </td>
+      </tr>`;
+    });
+    tbody.innerHTML = html;
+  } catch (error) {
+    console.error('Error loading pending approvals:', error);
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Could not load pending approvals (${esc(error.code || error.message || 'unknown error')}).</td></tr>`;
+    section.style.display = 'block';
+  }
+}
+
+// ───────────────── Detail View (view + approve/deny) ─────────────────
+// Keeps the currently-loaded doc so the Approve/Deny handlers know what to write to
+let _currentDetail = null;
+
+async function openDetail(kind, docId) {
+  if (!['po', 'check'].includes(kind)) return;
+  // Hide all content tabs, show detail
+  document.querySelectorAll('[id^="tab"]').forEach(t => {
+    t.classList.remove('active');
+    t.style.display = '';
+  });
+  const detailTab = document.getElementById('tabDetail');
+  detailTab.classList.add('active');
+  // Clear any active nav pill so the user isn't confused about which tab they're on
+  document.querySelectorAll('#screenDashboard .nav-pill').forEach(p => p.classList.remove('active'));
+
+  const card = document.getElementById('detailCard');
+  card.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary)">Loading…</div>';
+
+  try {
+    const colName = kind === 'po' ? 'purchaseOrders' : 'checkRequests';
+    const docRef = db.collection('schools').doc(currentSchoolId).collection(colName).doc(docId);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      card.innerHTML = '<div style="padding:40px;text-align:center;color:var(--no-dark);font-weight:700">Request not found.</div>';
+      return;
+    }
+    const data = snap.data() || {};
+    _currentDetail = { kind, docId, docRef, data };
+    renderDetail(_currentDetail);
+  } catch (error) {
+    console.error('Error loading detail:', error);
+    card.innerHTML = `<div style="padding:40px;text-align:center;color:var(--no-dark);font-weight:700">Error loading request: ${esc(error.message || 'unknown')}</div>`;
+  }
+}
+
+function renderDetail(detail) {
+  const { kind, data } = detail;
+  const card = document.getElementById('detailCard');
+
+  const isPO = kind === 'po';
+  const status = String(data.status || 'Pending');
+  const st = _statusStyle(status);
+  const createdAt = _toDate(data.createdAt);
+  const decidedAt = _toDate(data.decidedAt);
+
+  const amt = isPO
+    ? (typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0)
+    : (typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0);
+
+  const requestedBy = isPO
+    ? (data.requestorEmail || '—')
+    : (data.email || data.name || '—');
+
+  // Field rows
+  const row = (label, value) => value ? `
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:16px;padding:12px 0;border-bottom:1px solid var(--line-light)">
+      <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">${esc(label)}</div>
+      <div style="font-size:14px;color:var(--text);word-break:break-word">${value}</div>
+    </div>` : '';
+
+  let fields = '';
+  fields += row('ID', `<span style="font-weight:700;color:var(--brand-dark)">${esc(isPO ? (data.poNumber || detail.docId) : (data.checkNumber || detail.docId))}</span>`);
+  fields += row('Status', `<span style="background:${st.bg};color:${st.color};padding:4px 10px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(status)}</span>`);
+  fields += row('Requested By', esc(requestedBy));
+  fields += row('Approver', esc(data.approver || '—'));
+  fields += row('Submitted', createdAt ? `${_fmtDate(createdAt)} · ${_fmtTime(createdAt)}` : '—');
+  fields += row('Amount', `<strong>$${amt.toFixed(2)}</strong>`);
+
+  if (isPO) {
+    fields += row('Vendor', esc(data.vendor || '—'));
+    fields += row('Account #', esc(data.glcode || '—'));
+    fields += row('Description', esc(data.description || '—').replace(/\n/g, '<br>'));
+  } else {
+    fields += row('Category', esc(data.category || '—'));
+    fields += row('Check Date', data.checkDate ? esc(data.checkDate) : '—');
+    fields += row('Description', esc(data.checkDescription || data.description || '—').replace(/\n/g, '<br>'));
+  }
+
+  if (data.decisionNote) {
+    fields += row('Decision Note', esc(data.decisionNote).replace(/\n/g, '<br>'));
+  }
+  if (decidedAt) {
+    fields += row('Decided', `${_fmtDate(decidedAt)} · ${_fmtTime(decidedAt)} ${data.decidedBy ? '· by ' + esc(data.decidedBy) : ''}`);
+  }
+
+  // Approve/Deny actions — only shown if pending AND current user is the assigned approver (or admin)
+  const iAmApprover = currentUser && (
+    (data.approver && String(data.approver).toLowerCase() === String(currentUser.email).toLowerCase()) ||
+    userRole === 'admin'
+  );
+  const canAct = iAmApprover && status.toLowerCase() === 'pending';
+
+  let actions = '';
+  if (canAct) {
+    actions = `
+      <div style="margin-top:28px;padding-top:24px;border-top:2px solid var(--line)">
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:6px">Make a Decision</h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+          A note is <strong>required</strong> when denying, optional when approving.
+        </p>
+        <div class="form-group">
+          <label>Note (optional for approve, required for deny)</label>
+          <textarea id="detailNote" placeholder="e.g. Approved for Q2 budget / Please resubmit with receipt attached" style="min-height:80px"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button id="btnApprove" onclick="submitDecision('Approved')"
+            style="flex:1;min-width:140px;padding:13px 20px;border:0;border-radius:12px;background:linear-gradient(135deg,#5fa85a,#3f7a3a);color:white;font-family:'Outfit',sans-serif;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(95,168,90,.35)">
+            ✓ Approve
+          </button>
+          <button id="btnDeny" onclick="submitDecision('Denied')"
+            style="flex:1;min-width:140px;padding:13px 20px;border:0;border-radius:12px;background:linear-gradient(135deg,#d15a3b,#a0412a);color:white;font-family:'Outfit',sans-serif;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(209,90,59,.35)">
+            ✕ Deny
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (status.toLowerCase() !== 'pending') {
+    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">This request has already been <strong style="color:${st.color}">${esc(status.toLowerCase())}</strong>.</div>`;
+  } else if (currentUser && data.approver) {
+    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(data.approver)}</strong>.</div>`;
+  }
+
+  card.innerHTML = `
+    <div style="margin-bottom:20px">
+      <h2 style="font-size:22px;font-weight:900;margin-bottom:4px">${isPO ? 'Purchase Order' : 'Check Request'}</h2>
+      <p style="font-size:13px;color:var(--text-secondary)">Review the full request below</p>
+    </div>
+    <div>${fields}</div>
+    ${actions}
+  `;
+}
+
+async function submitDecision(newStatus) {
+  if (!_currentDetail) return;
+  const noteEl = document.getElementById('detailNote');
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  if (newStatus === 'Denied' && !note) {
+    showToast('A note is required when denying a request', 'error');
+    if (noteEl) noteEl.focus();
+    return;
+  }
+
+  const btnA = document.getElementById('btnApprove');
+  const btnD = document.getElementById('btnDeny');
+  if (btnA) { btnA.disabled = true; btnA.style.opacity = '.55'; btnA.style.cursor = 'not-allowed'; }
+  if (btnD) { btnD.disabled = true; btnD.style.opacity = '.55'; btnD.style.cursor = 'not-allowed'; }
+
+  try {
+    await _currentDetail.docRef.update({
+      status: newStatus,
+      decisionNote: note || null,
+      decidedBy: currentUser.email,
+      decidedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast(`Request ${newStatus.toLowerCase()}.`, 'success');
+    // Re-fetch so the view updates with server timestamps
+    const snap = await _currentDetail.docRef.get();
+    _currentDetail.data = snap.data() || {};
+    renderDetail(_currentDetail);
+    // Refresh the dashboard tables in the background
+    loadPendingApprovals();
+    loadMySubmissions();
+  } catch (error) {
+    console.error('Error submitting decision:', error);
+    showToast('Could not save decision: ' + (error.message || 'unknown error'), 'error');
+    if (btnA) { btnA.disabled = false; btnA.style.opacity = '1'; btnA.style.cursor = 'pointer'; }
+    if (btnD) { btnD.disabled = false; btnD.style.opacity = '1'; btnD.style.cursor = 'pointer'; }
   }
 }
 
@@ -1871,3 +2186,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+
