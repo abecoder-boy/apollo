@@ -523,7 +523,7 @@ async function findSchool() {
     const emailDomain = email.split('@')[1];
     const domainPrefix = emailDomain ? emailDomain.split('.')[0].toLowerCase() : '';
     
-    // Find matching school by domain
+    // Find matching school by domain (no auth needed for schools read)
     const allSchools = await db.collection('schools').get();
     let foundSchool = null;
     
@@ -543,29 +543,6 @@ async function findSchool() {
       return;
     }
 
-    // Try to find user in Firestore
-    const usersQuery = await db.collection('users').where('email', '==', email).get();
-    
-    if (usersQuery.empty) {
-      showAuthError('Email not found. Please register first.');
-      return;
-    }
-
-    const userDoc = usersQuery.docs[0];
-    const userData = userDoc.data();
-    
-    // Make sure user is assigned to the school
-    if (!userData.schools || !userData.schools[foundSchool.id]) {
-      // Auto-assign user to school if not already assigned
-      await db.collection('users').doc(userDoc.id).update({
-        email: email,
-        schools: {
-          ...userData.schools,
-          [foundSchool.id]: 'user'
-        }
-      });
-    }
-    
     // Store school info and show password screen
     window.currentSchoolForLogin = foundSchool;
     document.getElementById('schoolNameDisplay').textContent = foundSchool.name;
