@@ -316,16 +316,32 @@
 
       <!-- LOGIN FORM -->
       <div id="loginForm">
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="login-email" placeholder="your@email.com">
+        <!-- STEP 1: Email -->
+        <div id="loginStep1">
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" id="login-email" placeholder="your@email.com">
+          </div>
+          <button class="btn-primary" onclick="findSchool()">Find My School</button>
         </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="login-pw" placeholder="••••••••">
+
+        <!-- STEP 2: Password (after finding school) -->
+        <div id="loginStep2" style="display:none">
+          <div style="background: var(--brand-light); padding: 16px; border-radius: var(--radius-sm); margin-bottom: 20px; text-align: center;">
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">You're signing in to:</div>
+            <div style="font-size: 18px; font-weight: 900; color: var(--text)" id="schoolNameDisplay"></div>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="login-pw" placeholder="••••••••">
+          </div>
+          <button class="btn-primary" onclick="doLogin()">Sign In</button>
+          <button class="btn-secondary" onclick="backToEmailStep()" style="width: 100%; margin-top: 10px; background: transparent; border: 2px solid var(--line); color: var(--text);">Back</button>
         </div>
-        <button class="btn-primary" onclick="doLogin()">Sign In</button>
-        <button class="btn-primary" onclick="showForgotPassword()" style="background: #666; margin-top: 10px;">Forgot Password?</button>
+
+        <div style="text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-secondary);">
+          Don't have an account? <a onclick="showLoginForm('register')" style="color: var(--brand); cursor: pointer; font-weight: 700;">Register here</a>
+        </div>
       </div>
 
       <!-- REGISTER FORM -->
@@ -436,6 +452,55 @@ async function autoSelectSchool() {
     console.error('Error auto-selecting school:', error);
     showToast('Error loading school', 'error');
   }
+}
+
+async function findSchool() {
+  const email = document.getElementById('login-email').value.trim();
+  
+  if (!email) {
+    showAuthError('Please enter your email address');
+    return;
+  }
+
+  try {
+    // Check if user exists and get their school
+    const usersQuery = await db.collection('users').where('email', '==', email).get();
+    
+    if (usersQuery.empty) {
+      showAuthError('Email not found. Please register first.');
+      return;
+    }
+
+    const userData = usersQuery.docs[0].data();
+    const schoolIds = Object.keys(userData.schools || {});
+    
+    if (schoolIds.length === 0) {
+      showAuthError('Your account is not assigned to any school yet. Contact your administrator.');
+      return;
+    }
+
+    // Get the first school
+    const schoolId = schoolIds[0];
+    const schoolDoc = await db.collection('schools').doc(schoolId).get();
+    
+    if (schoolDoc.exists) {
+      const school = schoolDoc.data();
+      // Store school info for login
+      window.currentSchoolForLogin = { id: schoolId, name: school.name };
+      // Show school name and password field
+      document.getElementById('schoolNameDisplay').textContent = school.name;
+      document.getElementById('loginStep1').style.display = 'none';
+      document.getElementById('loginStep2').style.display = 'block';
+    }
+  } catch (error) {
+    showAuthError('Error: ' + error.message);
+  }
+}
+
+function backToEmailStep() {
+  document.getElementById('loginStep1').style.display = 'block';
+  document.getElementById('loginStep2').style.display = 'none';
+  document.getElementById('login-pw').value = '';
 }
 
 async function doLogin() {
@@ -962,3 +1027,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+
