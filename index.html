@@ -491,6 +491,9 @@ async function doRegister() {
     const res = await auth.createUserWithEmailAndPassword(email, pw);
     await res.user.updateProfile({ displayName: name });
     
+    // Extract domain from email (e.g., "lincolnhigh.org" from "teacher@lincolnhigh.org")
+    const emailDomain = email.split('@')[1];
+    
     // Create user doc in Firestore
     const userDoc = {
       email: email,
@@ -501,6 +504,8 @@ async function doRegister() {
 
     // Check if this email is in any school's pending members
     const allSchools = await db.collection('schools').get();
+    let foundSchool = false;
+    
     for (const schoolDoc of allSchools.docs) {
       const memberDoc = await db.collection('schools').doc(schoolDoc.id)
         .collection('members').doc(email).get();
@@ -517,13 +522,44 @@ async function doRegister() {
           
           // Add school to user's schools
           userDoc.schools[schoolDoc.id] = member.role;
+          foundSchool = true;
+        }
+      }
+    }
+    
+    // If not invited to a school, try to auto-assign based on email domain
+    if (!foundSchool && emailDomain) {
+      for (const schoolDoc of allSchools.docs) {
+        const school = schoolDoc.data();
+        const schoolDomain = school.domain || '';
+        
+        // Check if email domain matches school domain
+        if (schoolDomain && emailDomain.toLowerCase() === schoolDomain.toLowerCase()) {
+          // Auto-add user to school as "user" role
+          await db.collection('schools').doc(schoolDoc.id)
+            .collection('members').doc(email).set({
+              email: email,
+              name: name,
+              role: 'user',
+              userId: res.user.uid,
+              status: 'active',
+              addedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          
+          userDoc.schools[schoolDoc.id] = 'user';
+          foundSchool = true;
+          break;
         }
       }
     }
 
     await db.collection('users').doc(res.user.uid).set(userDoc);
     
-    showAuthSuccess('Account created! Please log in.');
+    if (foundSchool) {
+      showAuthSuccess('Account created! Please log in.');
+    } else {
+      showAuthSuccess('Account created! Admin will assign you to a school.');
+    }
     setTimeout(() => showLoginForm('login'), 1500);
   } catch (error) {
     showAuthError(error.message);
