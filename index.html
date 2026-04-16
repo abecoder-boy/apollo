@@ -463,7 +463,31 @@ async function findSchool() {
   }
 
   try {
-    // Check if user exists and get their school
+    // Extract domain from email
+    const emailDomain = email.split('@')[1];
+    const domainPrefix = emailDomain ? emailDomain.split('.')[0].toLowerCase() : '';
+    
+    // Find matching school by domain
+    const allSchools = await db.collection('schools').get();
+    let foundSchool = null;
+    
+    for (const schoolDoc of allSchools.docs) {
+      const school = schoolDoc.data();
+      const schoolName = (school.name || '').toLowerCase();
+      
+      // Check if school name contains domain prefix
+      if (domainPrefix && schoolName.includes(domainPrefix)) {
+        foundSchool = { id: schoolDoc.id, name: school.name };
+        break;
+      }
+    }
+    
+    if (!foundSchool) {
+      showAuthError('No school found for your email domain. Contact your administrator.');
+      return;
+    }
+
+    // Try to find user in Firestore
     const usersQuery = await db.collection('users').where('email', '==', email).get();
     
     if (usersQuery.empty) {
@@ -471,28 +495,29 @@ async function findSchool() {
       return;
     }
 
-    const userData = usersQuery.docs[0].data();
-    const schoolIds = Object.keys(userData.schools || {});
+    const userDoc = usersQuery.docs[0];
+    const userData = userDoc.data();
     
-    if (schoolIds.length === 0) {
-      showAuthError('Your account is not assigned to any school yet. Contact your administrator.');
-      return;
+    // Make sure user is assigned to the school
+    if (!userData.schools || !userData.schools[foundSchool.id]) {
+      // Auto-assign user to school if not already assigned
+      await db.collection('users').doc(userDoc.id).update({
+        email: email,  // Ensure email field exists
+        schools: {
+          ...userData.schools,
+          [foundSchool.id]: 'user'
+        }
+      });
     }
-
-    // Get the first school
-    const schoolId = schoolIds[0];
-    const schoolDoc = await db.collection('schools').doc(schoolId).get();
     
-    if (schoolDoc.exists) {
-      const school = schoolDoc.data();
-      // Store school info for login
-      window.currentSchoolForLogin = { id: schoolId, name: school.name };
-      // Show school name and password field
-      document.getElementById('schoolNameDisplay').textContent = school.name;
-      document.getElementById('loginStep1').style.display = 'none';
-      document.getElementById('loginStep2').style.display = 'block';
-    }
+    // Store school info and show password screen
+    window.currentSchoolForLogin = foundSchool;
+    document.getElementById('schoolNameDisplay').textContent = foundSchool.name;
+    document.getElementById('loginStep1').style.display = 'none';
+    document.getElementById('loginStep2').style.display = 'block';
+    
   } catch (error) {
+    console.error('Error:', error);
     showAuthError('Error: ' + error.message);
   }
 }
@@ -1027,4 +1052,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
-
