@@ -317,6 +317,24 @@
             </div>
             <button class="btn-primary" onclick="inviteUserToSchool()">Send Invitation</button>
           </div>
+
+          <div style="margin-top:28px;padding-top:28px;border-top:1px solid var(--line)">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Bulk Import Users</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+              Paste one user per line as <code style="background:var(--line-light);padding:2px 6px;border-radius:4px;font-size:12px">email, name, role</code>.
+              Role is optional and defaults to <b>user</b>. Valid roles: user, approver, admin.
+            </p>
+            <div class="form-group">
+              <label>CSV Data</label>
+              <textarea id="bulkCsv" rows="8" style="font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="jane@school.edu, Jane Smith, user&#10;bob@school.edu, Bob Jones, approver&#10;alice@school.edu, Alice Nguyen"></textarea>
+              <div class="form-hint">Users will be created as pending. They activate their record by registering with that email.</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn-secondary" onclick="previewBulkImport()">Preview</button>
+              <button class="btn-primary" style="flex:1;min-width:180px;margin-top:0" onclick="runBulkImport()">Import Users</button>
+            </div>
+            <div id="bulkImportResult" style="margin-top:16px;display:none"></div>
+          </div>
         </div>
       </div>
 
@@ -1119,6 +1137,211 @@ async function inviteUserToSchool() {
   }
 }
 
+// ───────────────── Bulk CSV Import ─────────────────
+// Parses lines like "email, name, role" — role is optional and defaults to "user".
+// Returns { valid: [{email,name,role}], errors: [{line, text, reason}] }
+function parseBulkCsv(raw) {
+  const valid = [];
+  const errors = [];
+  const seenEmails = new Set();
+  const VALID_ROLES = new Set(['user','approver','admin']);
+
+  // Split on newlines, but also tolerate semicolons as line separators
+  const lines = String(raw || '').split(/\r?\n/);
+
+  lines.forEach((rawLine, idx) => {
+    const lineNum = idx + 1;
+    const line = rawLine.trim();
+    if (!line) return; // skip blank lines
+
+    // Skip common header rows
+    if (/^email\s*,/i.test(line)) return;
+
+    // Split on comma or tab. Allow "Last, First" in the name field by only
+    // splitting into at most 3 pieces: email, name, role.
+    // Find the first comma/tab as the email boundary, and the LAST comma/tab
+    // as the role boundary; anything in between is the name.
+    const firstSep = line.search(/[,\t]/);
+    if (firstSep < 0) {
+      errors.push({ line: lineNum, text: line, reason: 'missing comma — expected: email, name, role' });
+      return;
+    }
+    const email = line.slice(0, firstSep).trim().toLowerCase();
+    let rest = line.slice(firstSep + 1).trim();
+
+    // If there's another separator, everything after the LAST one might be a role.
+    // Detect: if the last piece, lowercased, is a valid role keyword, treat it as role.
+    let name = rest;
+    let role = 'user';
+    const lastSep = Math.max(rest.lastIndexOf(','), rest.lastIndexOf('\t'));
+    if (lastSep >= 0) {
+      const maybeRole = rest.slice(lastSep + 1).trim().toLowerCase();
+      if (VALID_ROLES.has(maybeRole)) {
+        role = maybeRole;
+        name = rest.slice(0, lastSep).trim();
+      }
+    }
+    // Strip surrounding quotes on the name
+    name = name.replace(/^["']|["']$/g, '').trim();
+
+    // Validate email shape
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push({ line: lineNum, text: line, reason: 'invalid email' });
+      return;
+    }
+    if (!name) {
+      errors.push({ line: lineNum, text: line, reason: 'missing name' });
+      return;
+    }
+    if (seenEmails.has(email)) {
+      errors.push({ line: lineNum, text: line, reason: 'duplicate email in paste' });
+      return;
+    }
+    seenEmails.add(email);
+
+    valid.push({ email, name, role });
+  });
+
+  return { valid, errors };
+}
+
+function escapeHtml(s) { return esc(s); }
+
+function renderBulkPreview(parsed, includeActions) {
+  const { valid, errors } = parsed;
+  const el = document.getElementById('bulkImportResult');
+  if (!valid.length && !errors.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  let html = '';
+  if (valid.length) {
+    html += `<div style="margin-bottom:12px;font-weight:700;color:var(--ok-dark)">✓ ${valid.length} user${valid.length===1?'':'s'} ready to import</div>`;
+    html += `<div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card-alt)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="position:sticky;top:0;background:var(--card);border-bottom:2px solid var(--line)">
+          <tr><th style="padding:10px;text-align:left">Email</th><th style="padding:10px;text-align:left">Name</th><th style="padding:10px;text-align:left">Role</th></tr>
+        </thead><tbody>`;
+    valid.forEach(u => {
+      html += `<tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:8px 10px">${escapeHtml(u.email)}</td>
+        <td style="padding:8px 10px">${escapeHtml(u.name)}</td>
+        <td style="padding:8px 10px"><span class="role-badge role-${u.role}">${u.role}</span></td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  if (errors.length) {
+    html += `<div style="margin-top:14px;padding:12px 14px;background:var(--no-light);border:1.5px solid rgba(209,90,59,.35);border-radius:var(--radius-sm)">
+      <div style="font-weight:700;color:var(--no-dark);margin-bottom:6px">⚠ ${errors.length} line${errors.length===1?'':'s'} skipped</div>
+      <ul style="margin:0;padding-left:20px;font-size:13px;color:var(--no-dark);line-height:1.5">`;
+    errors.forEach(err => {
+      html += `<li>Line ${err.line}: ${escapeHtml(err.reason)} — <code style="background:rgba(0,0,0,.05);padding:1px 5px;border-radius:3px">${escapeHtml(err.text.slice(0,80))}</code></li>`;
+    });
+    html += `</ul></div>`;
+  }
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function previewBulkImport() {
+  const raw = document.getElementById('bulkCsv').value;
+  const parsed = parseBulkCsv(raw);
+  renderBulkPreview(parsed, false);
+  if (!parsed.valid.length && !parsed.errors.length) {
+    showToast('Nothing to preview — paste some CSV first', 'error');
+  }
+}
+
+async function runBulkImport() {
+  if (userRole !== 'admin') {
+    showToast('Only admins can bulk import users', 'error');
+    return;
+  }
+  const raw = document.getElementById('bulkCsv').value;
+  const parsed = parseBulkCsv(raw);
+  renderBulkPreview(parsed, false);
+
+  if (!parsed.valid.length) {
+    showToast('No valid users to import', 'error');
+    return;
+  }
+
+  if (!confirm(`Import ${parsed.valid.length} user${parsed.valid.length===1?'':'s'} to this school?`)) return;
+
+  const resultEl = document.getElementById('bulkImportResult');
+  const progressLine = document.createElement('div');
+  progressLine.style.cssText = 'margin-top:12px;font-weight:700;color:var(--text-secondary)';
+  progressLine.textContent = 'Importing… 0 / ' + parsed.valid.length;
+  resultEl.appendChild(progressLine);
+
+  const schoolRef = db.collection('schools').doc(currentSchoolId);
+  const serverTs = firebase.firestore.FieldValue.serverTimestamp();
+
+  // Check for existing members first (single batched read per 10 parallel gets)
+  const existing = new Set();
+  for (let i = 0; i < parsed.valid.length; i += 10) {
+    const chunk = parsed.valid.slice(i, i + 10);
+    const snaps = await Promise.all(
+      chunk.map(u => schoolRef.collection('members').doc(u.email).get().catch(() => null))
+    );
+    snaps.forEach((s, j) => { if (s && s.exists) existing.add(chunk[j].email); });
+  }
+
+  // Firestore batch limit is 500 ops; we write one doc per user so chunk by 450 to be safe.
+  let imported = 0;
+  let skipped = 0;
+  const failures = [];
+
+  const toWrite = parsed.valid.filter(u => {
+    if (existing.has(u.email)) { skipped++; return false; }
+    return true;
+  });
+
+  for (let i = 0; i < toWrite.length; i += 450) {
+    const chunk = toWrite.slice(i, i + 450);
+    const batch = db.batch();
+    chunk.forEach(u => {
+      const ref = schoolRef.collection('members').doc(u.email);
+      batch.set(ref, {
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        status: 'pending',
+        userId: null,
+        addedAt: serverTs
+      });
+    });
+    try {
+      await batch.commit();
+      imported += chunk.length;
+      progressLine.textContent = `Importing… ${imported} / ${toWrite.length}`;
+    } catch (err) {
+      console.error('Batch write failed:', err);
+      chunk.forEach(u => failures.push({ email: u.email, reason: err.message }));
+    }
+  }
+
+  // Final summary
+  let summary = `<div style="margin-top:12px;padding:14px;background:var(--ok-light);border:1.5px solid rgba(95,168,90,.4);border-radius:var(--radius-sm);color:var(--ok-dark);font-weight:700">
+      ✅ Imported ${imported} user${imported===1?'':'s'}`;
+  if (skipped) summary += ` · <span style="color:var(--text-secondary);font-weight:600">${skipped} already existed, skipped</span>`;
+  summary += `</div>`;
+  if (failures.length) {
+    summary += `<div style="margin-top:8px;padding:10px 14px;background:var(--no-light);border-radius:var(--radius-sm);color:var(--no-dark);font-size:13px">
+      ⚠ ${failures.length} failed to write: ${failures.slice(0,5).map(f=>escapeHtml(f.email)).join(', ')}${failures.length>5?'…':''}
+    </div>`;
+  }
+  progressLine.innerHTML = summary;
+
+  if (imported > 0) {
+    document.getElementById('bulkCsv').value = '';
+    loadSchoolUsers();
+    showToast(`Imported ${imported} user${imported===1?'':'s'}`, 'success');
+  }
+}
+
 function showCreateSchoolModal() {
   const html = `
     <div class="modal-header">
@@ -1229,83 +1452,116 @@ function prefillCheckForm() {
 }
 
 async function loadMySubmissions() {
+  const tbody = document.getElementById('mySubmissionsTable');
+  if (!tbody) return;
+  if (!currentSchoolId || !currentUser) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>';
+    return;
+  }
+
   try {
-    const tbody = document.getElementById('mySubmissionsTable');
-    const poSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('purchaseOrders')
-      .where('createdBy', '==', currentUser.uid)
-      .orderBy('createdAt', 'desc')
-      .limit(10)
-      .get();
-    
-    const checkSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('checkRequests')
-      .where('createdBy', '==', currentUser.uid)
-      .orderBy('createdAt', 'desc')
-      .limit(10)
-      .get();
-    
-    let rows = [];
-    
-    // Add POs
-    poSnap.forEach(doc => {
-      const data = doc.data();
+    // Query each collection independently — if one fails (e.g. missing index, no data),
+    // we still render the other. Avoid compound where+orderBy (needs a composite index);
+    // sort in JS instead.
+    const poRef = db.collection('schools').doc(currentSchoolId).collection('purchaseOrders');
+    const checkRef = db.collection('schools').doc(currentSchoolId).collection('checkRequests');
+
+    async function safeFetch(ref) {
+      // Try querying by UID; fall back to email if nothing or if the records were
+      // written with a different createdBy shape (older data).
+      const byUid = await ref.where('createdBy', '==', currentUser.uid).get().catch(() => null);
+      if (byUid && !byUid.empty) return byUid.docs;
+      const byEmail = await ref.where('requestorEmail', '==', currentUser.email).get().catch(() => null);
+      if (byEmail && !byEmail.empty) return byEmail.docs;
+      // Check Requests use 'email' instead of 'requestorEmail'
+      const byEmail2 = await ref.where('email', '==', currentUser.email).get().catch(() => null);
+      if (byEmail2 && !byEmail2.empty) return byEmail2.docs;
+      return [];
+    }
+
+    const [poDocs, checkDocs] = await Promise.all([
+      safeFetch(poRef),
+      safeFetch(checkRef)
+    ]);
+
+    // Utility: coerce any timestamp-shaped value into a JS Date
+    const toDate = (v) => {
+      if (!v) return null;
+      if (typeof v.toDate === 'function') return v.toDate();
+      if (v instanceof Date) return v;
+      if (typeof v === 'number') return new Date(v);
+      if (typeof v === 'string') { const d = new Date(v); return isNaN(d) ? null : d; }
+      if (v.seconds) return new Date(v.seconds * 1000);
+      return null;
+    };
+
+    const rows = [];
+
+    poDocs.forEach(doc => {
+      const data = doc.data() || {};
+      const price = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
       rows.push({
         type: '📋 PO',
-        id: data.poNumber,
-        details: `${data.vendor} - $${data.totalPrice.toFixed(2)}`,
-        status: data.status,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt || data.createdAt
+        id: data.poNumber || doc.id,
+        details: `${data.vendor || 'Unknown vendor'} — $${price.toFixed(2)}`,
+        status: data.status || 'Pending',
+        createdAt: toDate(data.createdAt),
+        updatedAt: toDate(data.updatedAt) || toDate(data.createdAt)
       });
     });
-    
-    // Add Check Requests
-    checkSnap.forEach(doc => {
-      const data = doc.data();
+
+    checkDocs.forEach(doc => {
+      const data = doc.data() || {};
+      const amt = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0;
       rows.push({
         type: '🧾 Check',
-        id: data.checkNumber,
-        details: `${data.category} - $${data.amount.toFixed(2)}`,
-        status: data.status,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt || data.createdAt
+        id: data.checkNumber || doc.id,
+        details: `${data.category || 'Check request'} — $${amt.toFixed(2)}`,
+        status: data.status || 'Pending',
+        createdAt: toDate(data.createdAt),
+        updatedAt: toDate(data.updatedAt) || toDate(data.createdAt)
       });
     });
-    
-    // Sort by date descending
-    rows.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-    
+
+    // Sort newest first, nulls last
+    rows.sort((a, b) => {
+      const ta = a.createdAt ? a.createdAt.getTime() : 0;
+      const tb = b.createdAt ? b.createdAt.getTime() : 0;
+      return tb - ta;
+    });
+
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">No submissions yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">No submissions yet — your POs and check requests will appear here.</td></tr>';
       return;
     }
-    
+
+    // Cap the display to 20 most recent to keep the dashboard snappy
+    const display = rows.slice(0, 20);
+
+    const fmtDate = (d) => d ? d.toLocaleDateString() : '—';
+    const fmtTime = (d) => d ? d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
+
     let html = '';
-    rows.forEach(row => {
-      const statusColor = row.status === 'Approved' ? 'var(--ok)' : row.status === 'Denied' ? '#f87171' : 'var(--brand)';
-      const statusBg = row.status === 'Approved' ? 'var(--ok-light)' : row.status === 'Denied' ? '#fee2e2' : 'var(--brand-light)';
-      const createdDate = row.createdAt.toDate().toLocaleDateString();
-      const createdTime = row.createdAt.toDate().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-      const updatedDate = row.updatedAt.toDate().toLocaleDateString();
-      const updatedTime = row.updatedAt.toDate().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-      
-      html += `<tr style="border-bottom:1px solid var(--line);hover-background:var(--card)">
-        <td style="padding:12px">${row.type}</td>
-        <td style="padding:12px;font-weight:700">${row.id}</td>
-        <td style="padding:12px">${row.details}</td>
+    display.forEach(row => {
+      const s = String(row.status).toLowerCase();
+      const statusColor = s === 'approved' ? 'var(--ok-dark)' : s === 'denied' ? 'var(--no-dark)' : 'var(--brand-dark)';
+      const statusBg    = s === 'approved' ? 'var(--ok-light)' : s === 'denied' ? 'var(--no-light)' : 'var(--brand-light)';
+      html += `<tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:12px">${esc(row.type)}</td>
+        <td style="padding:12px;font-weight:700">${esc(row.id)}</td>
+        <td style="padding:12px">${esc(row.details)}</td>
         <td style="padding:12px">
-          <span style="background:${statusBg};color:${statusColor};padding:4px 8px;border-radius:4px;font-weight:700;font-size:12px">${row.status}</span>
+          <span style="background:${statusBg};color:${statusColor};padding:4px 8px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(row.status)}</span>
         </td>
-        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${createdDate}<br>${createdTime}</td>
-        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${updatedDate}<br>${updatedTime}</td>
+        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${fmtDate(row.createdAt)}<br>${fmtTime(row.createdAt)}</td>
+        <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${fmtDate(row.updatedAt)}<br>${fmtTime(row.updatedAt)}</td>
       </tr>`;
     });
-    
+
     tbody.innerHTML = html;
   } catch (error) {
     console.error('Error loading submissions:', error);
-    document.getElementById('mySubmissionsTable').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Error loading submissions</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Could not load submissions (${esc(error.code || error.message || 'unknown error')}).</td></tr>`;
   }
 }
 
@@ -1329,12 +1585,6 @@ function esc(v) {
 // PURCHASE ORDERS & CHECK REQUESTS
 // ═══════════════════════════════════════════════════════════════
 function submitPO() {
-  // Check if user has permission
-  if (userRole === 'user') {
-    showToast('Users cannot submit Purchase Orders. Only Approvers and Admins can.', 'error');
-    return;
-  }
-
   const form = document.getElementById('poForm');
   const vendor = form.querySelector('[name="vendor"]').value;
   const glcode = form.querySelector('[name="glcode"]').value;
@@ -1439,12 +1689,6 @@ async function loadApproversForCheck() {
 }
 
 function submitCheck() {
-  // Check if user has permission
-  if (userRole === 'user') {
-    showToast('Users cannot submit Check Requests. Only Approvers and Admins can.', 'error');
-    return;
-  }
-
   const form = document.getElementById('checkForm');
   const checkDate = form.querySelector('[name="checkDate"]').value;
   const amount = parseFloat(form.querySelector('[name="checkAmount"]').value);
