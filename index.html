@@ -278,18 +278,74 @@
 
       <!-- Placeholder for other tabs -->
       <div class="screen" id="tabPO">
-        <div class="form-card">
-          <p>Purchase Orders section (use your existing code)</p>
+        <div class="form-container">
+          <div class="form-card">
+            <div class="form-header">
+              <div class="form-header-icon">📋</div>
+              <h2 class="form-title">New Purchase Order</h2>
+              <p class="form-subtitle">Fill in the details below</p>
+            </div>
+            <form id="poForm" onsubmit="return false">
+              <div class="form-group"><label>Employee Name</label><input type="text" id="po-employee" name="employee" readonly></div>
+              <div class="form-row">
+                <div class="form-group"><label>Vendor</label><input type="text" name="vendor" required placeholder="Vendor name"></div>
+                <div class="form-group"><label>Account #</label><input type="text" name="glcode" required placeholder="GL / Account code"></div>
+              </div>
+              <div class="form-group"><label>Description</label><textarea name="description" required placeholder="What is this purchase for?"></textarea></div>
+              <div class="form-group"><label>Total Price ($)</label><input type="number" step="0.01" name="totalPrice" required placeholder="0.00"></div>
+              <div class="form-group"><label>Your Email</label><input type="email" id="po-email" name="requestorEmail" readonly></div>
+              <button type="button" class="btn-primary" onclick="submitPO()">Submit Purchase Order</button>
+            </form>
+            <div id="po-confirmation" style="display:none;margin-top:16px;padding:14px 16px;background:var(--ok-light);border:2px solid #6ee7b7;border-radius:var(--radius-sm);font-weight:700;font-size:14px;color:var(--ok-dark)"></div>
+          </div>
         </div>
       </div>
       <div class="screen" id="tabCheck">
-        <div class="form-card">
-          <p>Check Requests section (use your existing code)</p>
+        <div class="form-container">
+          <div class="form-card">
+            <div class="form-header">
+              <div class="form-header-icon">🧾</div>
+              <h2 class="form-title">Check Request</h2>
+              <p class="form-subtitle">Submit a check request for reimbursement</p>
+            </div>
+            <form id="checkForm" onsubmit="return false">
+              <div class="form-row">
+                <div class="form-group"><label>Your Name</label><input type="text" id="check-name" name="checkName" readonly></div>
+                <div class="form-group"><label>Your Email</label><input type="email" id="check-email" name="checkEmail" readonly></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>Date</label><input type="date" name="checkDate" required></div>
+                <div class="form-group"><label>Amount ($)</label><input type="number" step="0.01" name="checkAmount" required placeholder="0.00"></div>
+              </div>
+              <div class="form-group"><label>Category</label><select name="checkCategory" required><option value="" disabled selected>Select category</option><option>Travel</option><option>Meals & Entertainment</option><option>Office Supplies</option><option>Software / Subscriptions</option><option>Equipment</option><option>Other</option></select></div>
+              <div class="form-group"><label>Description</label><textarea name="checkDescription" required placeholder="Describe the expense..."></textarea></div>
+              <button type="button" class="btn-primary" onclick="submitCheck()">Submit Check Request</button>
+            </form>
+            <div id="check-confirmation" style="display:none;margin-top:16px;padding:14px 16px;background:var(--ok-light);border:2px solid #6ee7b7;border-radius:var(--radius-sm);font-weight:700;font-size:14px;color:var(--ok-dark)"></div>
+          </div>
         </div>
       </div>
       <div class="screen" id="tabReports">
-        <div class="form-card">
-          <p>Reports section (use your existing code)</p>
+        <div class="form-container">
+          <div class="form-card" style="max-width:1000px;padding:28px">
+            <div class="form-header">
+              <div class="form-header-icon">📊</div>
+              <h2 class="form-title">Reports & Export</h2>
+              <p class="form-subtitle">Filter your data and download as Excel</p>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:20px">
+              <div class="form-group" style="margin:0"><label>Type</label><select id="rptType" onchange="applyReportFilters()"><option value="all">All</option><option value="po">Purchase Orders</option><option value="check">Check Requests</option></select></div>
+              <div class="form-group" style="margin:0"><label>Status</label><select id="rptStatus" onchange="applyReportFilters()"><option value="all">All</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Denied">Denied</option></select></div>
+              <div class="form-group" style="margin:0"><label>From Date</label><input type="date" id="rptFrom" onchange="applyReportFilters()"></div>
+              <div class="form-group" style="margin:0"><label>To Date</label><input type="date" id="rptTo" onchange="applyReportFilters()"></div>
+              <div class="form-group" style="margin:0"><label>Employee</label><input type="text" id="rptEmployee" placeholder="Any" onchange="applyReportFilters()"></div>
+              <div class="form-group" style="margin:0"><label>Vendor</label><input type="text" id="rptVendor" placeholder="Any" onchange="applyReportFilters()"></div>
+            </div>
+            <button class="btn-primary" style="width:auto;display:inline-block" onclick="downloadReport()">📥 Download Excel</button>
+            <div id="rptTable" style="margin-top:20px"></div>
+            <div id="rptEmpty" style="text-align:center;color:var(--text-secondary);padding:40px"></div>
+            <div style="padding:16px;text-align:right;color:var(--muted);font-size:13px;font-weight:600" id="rptCount"></div>
+          </div>
         </div>
       </div>
     </div>
