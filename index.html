@@ -552,7 +552,7 @@ async function autoSelectSchool() {
 }
 
 async function findSchool() {
-  const email = document.getElementById('login-email').value.trim();
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
   
   if (!email) {
     showAuthError('Please enter your email address');
@@ -603,7 +603,7 @@ function backToEmailStep() {
 }
 
 async function doLogin() {
-  const email = document.getElementById('login-email').value.trim();
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
   const pw = document.getElementById('login-pw').value;
   
   if (!email || !pw) {
@@ -625,7 +625,8 @@ async function doLogin() {
 
 async function doRegister() {
   const name = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
+  const emailRaw = document.getElementById('reg-email').value.trim();
+  const email = emailRaw.toLowerCase();
   const pw = document.getElementById('reg-pw').value;
   const pw2 = document.getElementById('reg-pw2').value;
   
@@ -655,39 +656,55 @@ async function doRegister() {
       schools: {}
     };
 
-    // Check if this email is in any school's pending members
+    // Check if this email is in any school's pending members.
+    // Try both the lowercased email and the original typed-in version as doc IDs,
+    // because older invites might have been stored with different casing.
     const allSchools = await db.collection('schools').get();
     let foundSchool = false;
+    const candidateIds = emailRaw && emailRaw !== email ? [email, emailRaw] : [email];
     
     for (const schoolDoc of allSchools.docs) {
-      const memberDoc = await db.collection('schools').doc(schoolDoc.id)
-        .collection('members').doc(email).get();
+      let memberDoc = null;
+      let memberId = null;
+      for (const id of candidateIds) {
+        const snap = await db.collection('schools').doc(schoolDoc.id)
+          .collection('members').doc(id).get();
+        if (snap.exists) { memberDoc = snap; memberId = id; break; }
+      }
       
-      if (memberDoc.exists) {
+      if (memberDoc && memberDoc.exists) {
         const member = memberDoc.data();
-        if (member.status === 'pending') {
-          // Activate this member
-          await db.collection('schools').doc(schoolDoc.id)
-            .collection('members').doc(email).update({
-              userId: res.user.uid,
-              status: 'active'
-            });
-          
-          // Add school to user's schools
-          userDoc.schools[schoolDoc.id] = member.role;
-          foundSchool = true;
-        }
+        // Activate them regardless of whether status is 'pending' or something else —
+        // we found an invite, that's authoritative. Preserve their assigned role.
+        await db.collection('schools').doc(schoolDoc.id)
+          .collection('members').doc(memberId).update({
+            userId: res.user.uid,
+            status: 'active'
+          });
+        
+        // Add school to user's schools using the role they were invited with
+        userDoc.schools[schoolDoc.id] = member.role || 'user';
+        foundSchool = true;
       }
     }
     
-    // If not invited, try to auto-assign based on email domain
+    // If not invited, try to auto-assign based on email domain — but ONLY create
+    // a fresh record if there's no existing member doc for this email under any casing.
     if (!foundSchool && domainPrefix) {
       for (const schoolDoc of allSchools.docs) {
         const school = schoolDoc.data();
         const schoolName = (school.name || '').toLowerCase();
         
-        // Check if school name contains domain prefix
         if (schoolName.includes(domainPrefix)) {
+          // Double-check no existing record under either casing before auto-adding
+          let existing = false;
+          for (const id of candidateIds) {
+            const snap = await db.collection('schools').doc(schoolDoc.id)
+              .collection('members').doc(id).get();
+            if (snap.exists) { existing = true; break; }
+          }
+          if (existing) { foundSchool = true; break; }
+          
           // Auto-add user to school as "user" role
           await db.collection('schools').doc(schoolDoc.id)
             .collection('members').doc(email).set({
@@ -801,7 +818,7 @@ async function devLoadAllSchools() {
 
 async function devCreateSchoolWithAdmin() {
   const schoolName = document.getElementById('devSchoolName').value.trim();
-  const adminEmail = document.getElementById('devAdminEmail').value.trim();
+  const adminEmail = document.getElementById('devAdminEmail').value.trim().toLowerCase();
   const adminName = document.getElementById('devAdminName').value.trim();
 
   if (!schoolName || !adminEmail || !adminName) {
@@ -935,12 +952,26 @@ async function loadSchoolData() {
       document.getElementById('dashApproved').textContent = '$0';
     }
 
-    // Load user's role in this school
-    const memberDoc = await db.collection('schools').doc(currentSchoolId)
+    // Load user's role in this school (try exact email, then lowercase fallback)
+    let memberDoc = await db.collection('schools').doc(currentSchoolId)
       .collection('members').doc(currentUser.email).get();
+    if (!memberDoc.exists && currentUser.email) {
+      memberDoc = await db.collection('schools').doc(currentSchoolId)
+        .collection('members').doc(currentUser.email.toLowerCase()).get();
+    }
     
     if (memberDoc.exists) {
-      userRole = memberDoc.data().role;
+      userRole = String(memberDoc.data().role || 'user').trim().toLowerCase();
+      // Auto-activate pending members on first login so they don't stay in limbo
+      const memberData = memberDoc.data();
+      if (String(memberData.status || '').toLowerCase() === 'pending') {
+        try {
+          await memberDoc.ref.update({
+            userId: currentUser.uid,
+            status: 'active'
+          });
+        } catch (e) { console.warn('Could not auto-activate member:', e); }
+      }
     } else {
       userRole = 'user'; // Default role
     }
@@ -948,10 +979,10 @@ async function loadSchoolData() {
     // Update role display
     document.getElementById('userRole').textContent = userRole.toUpperCase();
     
-    // Show/hide tabs based on role
-    const isAdmin = userRole === 'admin';
-    document.getElementById('reportsTab').style.display = isAdmin ? 'block' : 'none';
-    document.getElementById('settingsTab').style.display = isAdmin ? 'block' : 'none';
+    // Show/hide tabs based on role — admins AND approvers can access Settings & Reports
+    const canManage = (userRole === 'admin' || userRole === 'approver');
+    document.getElementById('reportsTab').style.display = canManage ? 'block' : 'none';
+    document.getElementById('settingsTab').style.display = canManage ? 'block' : 'none';
 
     // Load school users
     loadSchoolUsers();
@@ -971,15 +1002,44 @@ async function loadSchoolUsers() {
     if (usersSnap.empty) {
       html = '<div style="padding:16px;text-align:center;color:var(--muted)">No users yet</div>';
     } else {
+      const canEdit = (userRole === 'admin');
       usersSnap.forEach(doc => {
         const member = doc.data();
-        html += `
-          <div style="padding:14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-weight:700;color:var(--text)">${esc(member.email)}</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${member.name || 'No name'}</div>
+        const memberEmail = member.email || doc.id;
+        const memberRole = String(member.role || 'user').toLowerCase();
+        const isSelf = currentUser && (currentUser.email || '').toLowerCase() === memberEmail.toLowerCase();
+        const statusLabel = String(member.status || '').toLowerCase() === 'pending'
+          ? '<span style="font-size:11px;color:var(--accent);font-weight:700;margin-left:8px">PENDING</span>'
+          : '';
+
+        // Right-hand controls: read-only badge for non-admins, dropdown+remove for admins
+        let controls;
+        if (canEdit && !isSelf) {
+          const safeId = memberEmail.replace(/[^a-zA-Z0-9]/g, '_');
+          controls = `
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="role-${safeId}" onchange="changeUserRole('${esc(memberEmail)}', this.value)"
+                style="padding:6px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;color:var(--text);background:white;cursor:pointer">
+                <option value="user"${memberRole==='user'?' selected':''}>User</option>
+                <option value="approver"${memberRole==='approver'?' selected':''}>Approver</option>
+                <option value="admin"${memberRole==='admin'?' selected':''}>Admin</option>
+              </select>
+              <button onclick="removeUserFromSchool('${esc(memberEmail)}')"
+                style="border:1.5px solid var(--line);background:white;color:var(--no-dark);padding:6px 10px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer"
+                title="Remove user">✕</button>
             </div>
-            <span class="role-badge role-${member.role}">${member.role}</span>
+          `;
+        } else {
+          controls = `<span class="role-badge role-${memberRole}">${memberRole}${isSelf?' (you)':''}</span>`;
+        }
+
+        html += `
+          <div style="padding:14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div style="min-width:0;flex:1">
+              <div style="font-weight:700;color:var(--text);word-break:break-all">${esc(memberEmail)}${statusLabel}</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${esc(member.name || 'No name')}</div>
+            </div>
+            ${controls}
           </div>
         `;
       });
@@ -991,8 +1051,47 @@ async function loadSchoolUsers() {
   }
 }
 
+async function changeUserRole(memberEmail, newRole) {
+  if (userRole !== 'admin') {
+    showToast('Only admins can change roles', 'error');
+    return;
+  }
+  const normalized = (newRole || '').toLowerCase();
+  if (!['user','approver','admin'].includes(normalized)) {
+    showToast('Invalid role', 'error');
+    return;
+  }
+  try {
+    await db.collection('schools').doc(currentSchoolId)
+      .collection('members').doc(memberEmail).update({ role: normalized });
+    showToast(`Role updated to ${normalized}`);
+    loadSchoolUsers();
+  } catch (err) {
+    console.error('Error changing role:', err);
+    showToast('Error changing role: ' + err.message, 'error');
+    loadSchoolUsers(); // reset UI to actual server state
+  }
+}
+
+async function removeUserFromSchool(memberEmail) {
+  if (userRole !== 'admin') {
+    showToast('Only admins can remove users', 'error');
+    return;
+  }
+  if (!confirm(`Remove ${memberEmail} from this school?`)) return;
+  try {
+    await db.collection('schools').doc(currentSchoolId)
+      .collection('members').doc(memberEmail).delete();
+    showToast(`Removed ${memberEmail}`);
+    loadSchoolUsers();
+  } catch (err) {
+    console.error('Error removing user:', err);
+    showToast('Error removing user: ' + err.message, 'error');
+  }
+}
+
 async function inviteUserToSchool() {
-  const email = document.getElementById('inviteEmail').value.trim();
+  const email = document.getElementById('inviteEmail').value.trim().toLowerCase();
   const role = document.getElementById('inviteRole').value;
   
   if (!email) {
@@ -1282,13 +1381,17 @@ function submitPO() {
 // Load approvers for PO form
 async function loadApproversForPO() {
   try {
+    // Load ALL members, filter in code — approvers should appear even while pending
     const membersSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('members').where('status', '==', 'active').get();
+      .collection('members').get();
     
     const approvers = [];
     membersSnap.forEach(doc => {
       const member = doc.data();
-      if (member.role === 'admin' || member.role === 'approver') {
+      const role = String(member.role || '').trim().toLowerCase();
+      const status = String(member.status || '').trim().toLowerCase();
+      // Accept active AND pending so a freshly-invited admin/approver appears immediately
+      if ((role === 'admin' || role === 'approver') && (status === 'active' || status === 'pending' || !status)) {
         approvers.push({ email: member.email, name: member.name });
       }
     });
@@ -1310,12 +1413,14 @@ async function loadApproversForPO() {
 async function loadApproversForCheck() {
   try {
     const membersSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('members').where('status', '==', 'active').get();
+      .collection('members').get();
     
     const approvers = [];
     membersSnap.forEach(doc => {
       const member = doc.data();
-      if (member.role === 'admin' || member.role === 'approver') {
+      const role = String(member.role || '').trim().toLowerCase();
+      const status = String(member.status || '').trim().toLowerCase();
+      if ((role === 'admin' || role === 'approver') && (status === 'active' || status === 'pending' || !status)) {
         approvers.push({ email: member.email, name: member.name });
       }
     });
