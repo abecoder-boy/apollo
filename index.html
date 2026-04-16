@@ -591,7 +591,11 @@ async function doLogin() {
 
   try {
     await auth.signInWithEmailAndPassword(email, pw);
-    showAuthSuccess('Logged in!');
+    // Clear form and reset login steps
+    document.getElementById('login-email').value = '';
+    document.getElementById('login-pw').value = '';
+    document.getElementById('loginStep1').style.display = 'block';
+    document.getElementById('loginStep2').style.display = 'none';
   } catch (error) {
     showAuthError(error.message);
   }
@@ -1067,8 +1071,216 @@ function esc(v) {
   return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ═══════════════════════════════════════════════════════════════
+// PURCHASE ORDERS & CHECK REQUESTS
+// ═══════════════════════════════════════════════════════════════
+function submitPO() {
+  const form = document.getElementById('poForm');
+  const vendor = form.querySelector('[name="vendor"]').value;
+  const glcode = form.querySelector('[name="glcode"]').value;
+  const description = form.querySelector('[name="description"]').value;
+  const totalPrice = parseFloat(form.querySelector('[name="totalPrice"]').value);
+  const email = document.getElementById('po-email').value;
+  
+  if (!vendor || !glcode || !description || !totalPrice) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+
+  const poNumber = 'PO-' + Date.now();
+  
+  db.collection('schools').doc(currentSchoolId).collection('purchaseOrders').add({
+    poNumber: poNumber,
+    vendor: vendor,
+    glcode: glcode,
+    description: description,
+    totalPrice: totalPrice,
+    status: 'pending',
+    createdBy: currentUser.uid,
+    requestorEmail: email,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    schoolId: currentSchoolId
+  })
+  .then(() => {
+    showToast('✅ Purchase Order submitted!', 'success');
+    document.getElementById('po-confirmation').textContent = `PO ${poNumber} submitted successfully!`;
+    document.getElementById('po-confirmation').style.display = 'block';
+    form.reset();
+    setTimeout(() => {
+      document.getElementById('po-confirmation').style.display = 'none';
+    }, 4000);
+  })
+  .catch(error => {
+    showToast('Error: ' + error.message, 'error');
+  });
+}
+
+function submitCheck() {
+  const form = document.getElementById('checkForm');
+  const checkDate = form.querySelector('[name="checkDate"]').value;
+  const amount = parseFloat(form.querySelector('[name="checkAmount"]').value);
+  const category = form.querySelector('[name="checkCategory"]').value;
+  const description = form.querySelector('[name="checkDescription"]').value;
+  const email = document.getElementById('check-email').value;
+  const name = document.getElementById('check-name').value;
+  
+  if (!checkDate || !amount || !category || !description) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+
+  const checkNumber = 'CHK-' + Date.now();
+  
+  db.collection('schools').doc(currentSchoolId).collection('checkRequests').add({
+    checkNumber: checkNumber,
+    checkDate: checkDate,
+    amount: amount,
+    category: category,
+    description: description,
+    status: 'pending',
+    createdBy: currentUser.uid,
+    email: email,
+    name: name,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    schoolId: currentSchoolId
+  })
+  .then(() => {
+    showToast('✅ Check Request submitted!', 'success');
+    document.getElementById('check-confirmation').textContent = `Check Request ${checkNumber} submitted successfully!`;
+    document.getElementById('check-confirmation').style.display = 'block';
+    form.reset();
+    setTimeout(() => {
+      document.getElementById('check-confirmation').style.display = 'none';
+    }, 4000);
+  })
+  .catch(error => {
+    showToast('Error: ' + error.message, 'error');
+  });
+}
+
+function applyReportFilters() {
+  const typeF = document.getElementById('rptType').value;
+  const statusF = document.getElementById('rptStatus').value;
+  const fromF = document.getElementById('rptFrom').value;
+  const toF = document.getElementById('rptTo').value;
+  const empF = document.getElementById('rptEmployee').value.toLowerCase();
+  const vendF = document.getElementById('rptVendor').value.toLowerCase();
+
+  let poQuery = db.collection('schools').doc(currentSchoolId).collection('purchaseOrders');
+  let checkQuery = db.collection('schools').doc(currentSchoolId).collection('checkRequests');
+
+  if (statusF !== 'all') {
+    poQuery = poQuery.where('status', '==', statusF);
+    checkQuery = checkQuery.where('status', '==', statusF);
+  }
+
+  Promise.all([
+    poQuery.get(),
+    checkQuery.get()
+  ])
+  .then(([poSnap, checkSnap]) => {
+    let rows = [];
+    
+    if (typeF === 'all' || typeF === 'po') {
+      poSnap.forEach(doc => {
+        const data = doc.data();
+        if ((empF === '' || (data.requestorEmail || '').toLowerCase().includes(empF)) &&
+            (vendF === '' || (data.vendor || '').toLowerCase().includes(vendF)) &&
+            (!fromF || new Date(data.createdAt.toDate()) >= new Date(fromF)) &&
+            (!toF || new Date(data.createdAt.toDate()) <= new Date(toF + 'T23:59:59'))) {
+          rows.push({
+            type: 'PO',
+            id: data.poNumber,
+            date: data.createdAt.toDate(),
+            name: data.requestorEmail,
+            vendor: data.vendor,
+            amount: data.totalPrice,
+            status: data.status
+          });
+        }
+      });
+    }
+
+    if (typeF === 'all' || typeF === 'check') {
+      checkSnap.forEach(doc => {
+        const data = doc.data();
+        if ((empF === '' || (data.email || '').toLowerCase().includes(empF)) &&
+            (!fromF || new Date(data.checkDate) >= new Date(fromF)) &&
+            (!toF || new Date(data.checkDate) <= new Date(toF))) {
+          rows.push({
+            type: 'Check',
+            id: data.checkNumber,
+            date: new Date(data.checkDate),
+            name: data.name,
+            category: data.category,
+            amount: data.amount,
+            status: data.status
+          });
+        }
+      });
+    }
+
+    renderReportTable(rows);
+  });
+}
+
+function renderReportTable(rows) {
+  const table = document.getElementById('rptTable');
+  const empty = document.getElementById('rptEmpty');
+  const count = document.getElementById('rptCount');
+
+  if (!rows || rows.length === 0) {
+    table.innerHTML = '';
+    empty.innerHTML = '<p>No records found</p>';
+    count.textContent = '';
+    return;
+  }
+  empty.innerHTML = '';
+
+  let html = '<thead><tr><th>Type</th><th>ID</th><th>Date</th><th>Name</th><th>Vendor/Category</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const statusClass = r.status === 'Approved' ? 'ok' : r.status === 'Denied' ? 'no' : 'pending';
+    html += `<tr>
+      <td>${r.type}</td>
+      <td>${r.id}</td>
+      <td>${r.date.toLocaleDateString()}</td>
+      <td>${r.name}</td>
+      <td>${r.vendor || r.category || ''}</td>
+      <td>$${r.amount.toFixed(2)}</td>
+      <td><span style="background:${statusClass};color:white;padding:4px 8px;border-radius:4px">${r.status}</span></td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+  count.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''} — Total: $${total.toFixed(2)}`;
+}
+
+function downloadReport() {
+  showToast('Download feature coming soon', 'error');
+}
+
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.className = 'toast ' + type;
+  setTimeout(() => toast.className = 'toast', 3000);
+}
+
 // Enter key support
 document.addEventListener('DOMContentLoaded', () => {
+  // Populate email/name fields when dashboard loads
+  setTimeout(() => {
+    if (currentUser) {
+      document.getElementById('po-employee').value = currentUser.displayName || 'User';
+      document.getElementById('po-email').value = currentUser.email;
+      document.getElementById('check-name').value = currentUser.displayName || 'User';
+      document.getElementById('check-email').value = currentUser.email;
+    }
+  }, 500);
+  
   document.getElementById('login-pw').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') doLogin();
   });
