@@ -338,10 +338,6 @@
           <button class="btn-primary" onclick="doLogin()">Sign In</button>
           <button class="btn-secondary" onclick="backToEmailStep()" style="width: 100%; margin-top: 10px; background: transparent; border: 2px solid var(--line); color: var(--text);">Back</button>
         </div>
-
-        <div style="text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-secondary);">
-          Don't have an account? <a onclick="showLoginForm('register')" style="color: var(--brand); cursor: pointer; font-weight: 700;">Register here</a>
-        </div>
       </div>
 
       <!-- REGISTER FORM -->
@@ -502,7 +498,7 @@ async function findSchool() {
     if (!userData.schools || !userData.schools[foundSchool.id]) {
       // Auto-assign user to school if not already assigned
       await db.collection('users').doc(userDoc.id).update({
-        email: email,  // Ensure email field exists
+        email: email,
         schools: {
           ...userData.schools,
           [foundSchool.id]: 'user'
@@ -545,22 +541,6 @@ async function doLogin() {
   }
 }
 
-async function showForgotPassword() {
-  const email = document.getElementById('login-email').value.trim();
-  
-  if (!email) {
-    showAuthError('Please enter your email address');
-    return;
-  }
-
-  try {
-    await auth.sendPasswordResetEmail(email);
-    showAuthSuccess('Password reset email sent! Check your inbox.');
-  } catch (error) {
-    showAuthError(error.message);
-  }
-}
-
 async function doRegister() {
   const name = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
@@ -582,7 +562,6 @@ async function doRegister() {
     await res.user.updateProfile({ displayName: name });
     
     // Extract domain from email and get school prefix
-    // e.g., "teacher@millbrook.org" -> "millbrook"
     const emailDomain = email.split('@')[1];
     const domainPrefix = emailDomain ? emailDomain.split('.')[0].toLowerCase() : '';
     
@@ -619,13 +598,13 @@ async function doRegister() {
       }
     }
     
-    // If not invited, try to auto-assign based on email domain matching school name
+    // If not invited, try to auto-assign based on email domain
     if (!foundSchool && domainPrefix) {
       for (const schoolDoc of allSchools.docs) {
         const school = schoolDoc.data();
         const schoolName = (school.name || '').toLowerCase();
         
-        // Check if school name contains the domain prefix (e.g., "millbrook" in "Millbrook High School")
+        // Check if school name contains domain prefix
         if (schoolName.includes(domainPrefix)) {
           // Auto-add user to school as "user" role
           await db.collection('schools').doc(schoolDoc.id)
@@ -647,11 +626,7 @@ async function doRegister() {
 
     await db.collection('users').doc(res.user.uid).set(userDoc);
     
-    if (foundSchool) {
-      showAuthSuccess('Account created! Please log in.');
-    } else {
-      showAuthSuccess('Account created! Admin will assign you to a school.');
-    }
+    showAuthSuccess('Account created! Please log in.');
     setTimeout(() => showLoginForm('login'), 1500);
   } catch (error) {
     showAuthError(error.message);
