@@ -605,10 +605,17 @@ let userSchools = [];
 // ═══════════════════════════════════════════════════════════════
 // AUTH FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
+// When true, skip auto school-select — we're mid-account-setup from an email link
+window._suppressAutoSelect = false;
+
 auth.onAuthStateChanged(async (user) => {
   if (user) {
     currentUser = user;
     document.getElementById('userBadge').textContent = user.email;
+
+    // If we're mid-account-setup from an email-link invite, the setup modal
+    // will route to the dashboard once it finishes.
+    if (window._suppressAutoSelect) return;
     
     // Check if user is developer
     if (user.email === 'abe.staats21@gmail.com') {
@@ -622,6 +629,172 @@ auth.onAuthStateChanged(async (user) => {
     showScreen('screenLogin');
   }
 });
+
+// On page load, detect if the current URL is a Firebase email sign-in link.
+// If so, sign the user in and (for new users) show the account-setup modal.
+async function handleEmailLinkSignIn() {
+  const url = window.location.href;
+  if (!auth.isSignInWithEmailLink(url)) return false;
+
+  // Email comes back via our continueUrl param. Fall back to a prompt if
+  // someone forwarded the link to themselves without our params.
+  const params = new URLSearchParams(window.location.search);
+  let email = (params.get('invitedEmail') || '').trim().toLowerCase();
+  const schoolIdFromLink = params.get('inviteSchool') || null;
+  if (!email) {
+    email = (window.prompt('Please enter your email to confirm sign-in:') || '').trim().toLowerCase();
+    if (!email) return false;
+  }
+
+  // Suppress auto-school-select while we finish setting up the account
+  window._suppressAutoSelect = true;
+
+  try {
+    const result = await auth.signInWithEmailLink(email, url);
+    // Strip the sign-in params from the URL so a refresh doesn't re-trigger
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // New user? They have no Firestore profile doc yet.
+    const userDocRef = db.collection('users').doc(result.user.uid);
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists) {
+      showAccountSetupModal(result.user, email, schoolIdFromLink);
+    } else {
+      // Existing user — make sure they're attached to the invited school, then continue normally
+      if (schoolIdFromLink) {
+        await _attachUserToInvitedSchool(result.user.uid, email, schoolIdFromLink);
+      }
+      window._suppressAutoSelect = false;
+      await loadUserSchools();
+      await autoSelectSchool();
+    }
+    return true;
+  } catch (err) {
+    console.error('signInWithEmailLink failed:', err);
+    window._suppressAutoSelect = false;
+    showToast('Sign-in link is invalid or expired. Please try again.', 'error');
+    return false;
+  }
+}
+
+// Activate the user's pending member record in the invited school and add it
+// to their /users/{uid}.schools map. Used both during account setup and when
+// an existing user clicks an invite link.
+async function _attachUserToInvitedSchool(uid, email, schoolId) {
+  try {
+    const memberRef = db.collection('schools').doc(schoolId).collection('members').doc(email);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) return;
+    const member = memberSnap.data();
+    await memberRef.update({ userId: uid, status: 'active' });
+    await db.collection('users').doc(uid).set({
+      [`schools.${schoolId}`]: member.role || 'user'
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Could not attach user to invited school:', e);
+  }
+}
+
+function showAccountSetupModal(firebaseUser, email, schoolIdFromLink) {
+  // Remove any existing modal first
+  const existing = document.getElementById('accountSetupBackdrop');
+  if (existing) existing.remove();
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'accountSetupBackdrop';
+  backdrop.className = 'modal-backdrop active';
+  backdrop.innerHTML = `
+    <div class="modal" style="width:min(460px,95%)">
+      <div class="modal-header">
+        <span>Welcome — Finish Your Account</span>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:18px;line-height:1.5">
+        You've been invited to join Apollo. Set your name and a password to complete sign-up.
+      </p>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="setupEmailReadonly" value="${escapeHtml(email)}" readonly>
+      </div>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="setupName" placeholder="Jane Smith" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="setupPw" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <input type="password" id="setupPw2" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div id="setupError" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--no-light);border:1px solid rgba(209,90,59,.3);border-radius:var(--radius-sm);color:var(--no-dark);font-size:13px;font-weight:600"></div>
+      <button class="btn-primary" id="setupSubmitBtn">Finish Setup</button>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  const submitBtn = document.getElementById('setupSubmitBtn');
+  const errBox = document.getElementById('setupError');
+  const showErr = (msg) => { errBox.textContent = msg; errBox.style.display = 'block'; };
+
+  submitBtn.addEventListener('click', async () => {
+    const name = document.getElementById('setupName').value.trim();
+    const pw = document.getElementById('setupPw').value;
+    const pw2 = document.getElementById('setupPw2').value;
+
+    errBox.style.display = 'none';
+    if (!name) return showErr('Please enter your name');
+    if (!pw || pw.length < 6) return showErr('Password must be at least 6 characters');
+    if (pw !== pw2) return showErr('Passwords do not match');
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Setting up…';
+
+    try {
+      await firebaseUser.updatePassword(pw);
+      await firebaseUser.updateProfile({ displayName: name });
+
+      // Create user profile doc
+      await db.collection('users').doc(firebaseUser.uid).set({
+        email: email,
+        name: name,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        schools: {}
+      }, { merge: true });
+
+      // Attach to the school they were invited to, plus activate any other
+      // pending invites for this same email across all schools.
+      const allSchools = await db.collection('schools').get();
+      for (const schoolDoc of allSchools.docs) {
+        const memberSnap = await db.collection('schools').doc(schoolDoc.id)
+          .collection('members').doc(email).get();
+        if (memberSnap.exists) {
+          const member = memberSnap.data();
+          await memberSnap.ref.update({ userId: firebaseUser.uid, status: 'active' });
+          await db.collection('users').doc(firebaseUser.uid).set({
+            [`schools.${schoolDoc.id}`]: member.role || 'user'
+          }, { merge: true });
+        }
+      }
+
+      backdrop.remove();
+      window._suppressAutoSelect = false;
+      // Refresh the user's displayName in our local state
+      currentUser = auth.currentUser;
+      await loadUserSchools();
+      await autoSelectSchool();
+      showToast('Welcome! Your account is set up.', 'success');
+    } catch (err) {
+      console.error('Account setup failed:', err);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Finish Setup';
+      showErr(err.message || 'Setup failed. Please try again.');
+    }
+  });
+
+  // Auto-focus the name field
+  setTimeout(() => document.getElementById('setupName').focus(), 100);
+}
 
 async function autoSelectSchool() {
   try {
@@ -1192,6 +1365,36 @@ async function removeUserFromSchool(memberEmail) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// EMAIL INVITATIONS — Firebase Auth Email Link Sign-In
+// ═══════════════════════════════════════════════════════════════
+
+// Build the continue URL that the user lands on after clicking their email link.
+// We encode the email and school ID so we can finish onboarding cleanly,
+// even if they open the link on a different device than where they were invited.
+function _buildInviteContinueUrl(email, schoolId) {
+  const base = window.location.origin + window.location.pathname;
+  const params = new URLSearchParams();
+  params.set('invitedEmail', email);
+  if (schoolId) params.set('inviteSchool', schoolId);
+  return `${base}?${params.toString()}`;
+}
+
+// Send a sign-in link to the given email. Returns { ok, error }.
+async function sendInviteEmail(email, schoolId) {
+  try {
+    const actionCodeSettings = {
+      url: _buildInviteContinueUrl(email, schoolId),
+      handleCodeInApp: true
+    };
+    await auth.sendSignInLinkToEmail(email, actionCodeSettings);
+    return { ok: true };
+  } catch (err) {
+    console.error('sendSignInLinkToEmail failed for', email, err);
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 async function inviteUserToSchool() {
   const email = document.getElementById('inviteEmail').value.trim().toLowerCase();
   const role = document.getElementById('inviteRole').value;
@@ -1203,7 +1406,6 @@ async function inviteUserToSchool() {
 
   try {
     // Add user to school members collection
-    // In production, you'd send an email invitation
     await db.collection('schools').doc(currentSchoolId).collection('members').doc(email).set({
       email: email,
       role: role,
@@ -1212,7 +1414,15 @@ async function inviteUserToSchool() {
       addedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    showToast(`✅ Invitation sent to ${email}`);
+    // Send the actual email invitation via Firebase Auth email link
+    const emailResult = await sendInviteEmail(email, currentSchoolId);
+    if (emailResult.ok) {
+      showToast(`✅ Invitation email sent to ${email}`);
+    } else {
+      // Member record was created but email failed — still useful (they can self-register)
+      showToast(`Added ${email} but email failed: ${emailResult.error}`, 'error');
+    }
+
     document.getElementById('inviteEmail').value = '';
     document.getElementById('inviteRole').value = 'user';
     loadSchoolUsers();
@@ -1418,6 +1628,32 @@ async function runBulkImport() {
     </div>`;
   }
   progressLine.innerHTML = summary;
+
+  // Send invitation emails to everyone we just wrote (sequential, with short pause
+  // between sends to stay under Firebase's per-IP email rate limits).
+  if (toWrite.length > 0) {
+    const emailStatusLine = document.createElement('div');
+    emailStatusLine.style.cssText = 'margin-top:8px;padding:10px 14px;background:var(--brand-light);border-radius:var(--radius-sm);color:var(--brand-dark);font-weight:700;font-size:13px';
+    emailStatusLine.textContent = `Sending invitation emails… 0 / ${toWrite.length}`;
+    resultEl.appendChild(emailStatusLine);
+
+    let sent = 0;
+    const emailFailures = [];
+    for (const u of toWrite) {
+      const r = await sendInviteEmail(u.email, currentSchoolId);
+      if (r.ok) sent++;
+      else emailFailures.push({ email: u.email, reason: r.error });
+      emailStatusLine.textContent = `Sending invitation emails… ${sent} / ${toWrite.length}`;
+      // Small pause between sends — Firebase rate-limits by IP
+      await new Promise(res => setTimeout(res, 200));
+    }
+
+    let emailSummary = `✉️ Sent ${sent} invitation email${sent===1?'':'s'}`;
+    if (emailFailures.length) {
+      emailSummary += ` · ${emailFailures.length} failed: ${emailFailures.slice(0,3).map(f=>escapeHtml(f.email)).join(', ')}${emailFailures.length>3?'…':''}`;
+    }
+    emailStatusLine.textContent = emailSummary;
+  }
 
   if (imported > 0) {
     document.getElementById('bulkCsv').value = '';
@@ -2459,6 +2695,11 @@ function showToast(msg, type = 'success') {
 
 // Enter key support
 document.addEventListener('DOMContentLoaded', () => {
+  // If the user just clicked an invite email link, handle that BEFORE
+  // onAuthStateChanged would otherwise route them — the handler sets a
+  // suppression flag so the dashboard doesn't load until setup is done.
+  handleEmailLinkSignIn();
+
   // Populate email/name fields when dashboard loads
   setTimeout(() => {
     if (currentUser) {
