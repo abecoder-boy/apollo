@@ -538,6 +538,9 @@
             <input type="password" id="login-pw" placeholder="••••••••">
           </div>
           <button class="btn-primary" onclick="doLogin()">Sign In</button>
+          <div style="text-align:center;margin-top:14px">
+            <a href="#" onclick="doForgotPassword(event)" style="color:var(--brand-glow);font-size:13px;font-weight:600;text-decoration:none">Forgot password?</a>
+          </div>
           <button class="btn-secondary" onclick="backToEmailStep()" style="width: 100%; margin-top: 10px; background: transparent; border: 2px solid var(--line); color: var(--text);">Back</button>
         </div>
       </div>
@@ -754,28 +757,40 @@ function showAccountSetupModal(firebaseUser, email, schoolIdFromLink) {
       await firebaseUser.updatePassword(pw);
       await firebaseUser.updateProfile({ displayName: name });
 
-      // Create user profile doc
-      await db.collection('users').doc(firebaseUser.uid).set({
+      // Build the user doc in memory first — same pattern as doRegister.
+      // This avoids leaving a half-baked profile with schools:{} if anything
+      // fails mid-way through the schools-attachment loop.
+      const userDocPayload = {
         email: email,
         name: name,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         schools: {}
-      }, { merge: true });
+      };
 
-      // Attach to the school they were invited to, plus activate any other
-      // pending invites for this same email across all schools.
-      const allSchools = await db.collection('schools').get();
-      for (const schoolDoc of allSchools.docs) {
-        const memberSnap = await db.collection('schools').doc(schoolDoc.id)
-          .collection('members').doc(email).get();
-        if (memberSnap.exists) {
-          const member = memberSnap.data();
-          await memberSnap.ref.update({ userId: firebaseUser.uid, status: 'active' });
-          await db.collection('users').doc(firebaseUser.uid).set({
-            [`schools.${schoolDoc.id}`]: member.role || 'user'
-          }, { merge: true });
+      // Find every school where this email has a pending member doc and
+      // collect them. Activate the member record as we go.
+      try {
+        const allSchools = await db.collection('schools').get();
+        for (const sd of allSchools.docs) {
+          const memberSnap = await db.collection('schools').doc(sd.id)
+            .collection('members').doc(email).get();
+          if (memberSnap.exists) {
+            const m = memberSnap.data();
+            try {
+              await memberSnap.ref.update({ userId: firebaseUser.uid, status: 'active' });
+            } catch (e) {
+              console.warn('Could not activate member doc for school', sd.id, e);
+            }
+            userDocPayload.schools[sd.id] = m.role || 'user';
+          }
         }
+      } catch (e) {
+        // Even if school discovery fails, we still want to save the user doc
+        console.warn('School discovery during setup failed:', e);
       }
+
+      // Single write of the complete user doc
+      await db.collection('users').doc(firebaseUser.uid).set(userDocPayload, { merge: true });
 
       backdrop.remove();
       window._suppressAutoSelect = false;
@@ -798,17 +813,60 @@ function showAccountSetupModal(firebaseUser, email, schoolIdFromLink) {
 
 async function autoSelectSchool() {
   try {
-    const userDoc = await db.collection('users').doc(currentUser.uid).get();
+    const userDocRef = db.collection('users').doc(currentUser.uid);
+    let userDoc = await userDocRef.get();
+
+    // If there's no user doc at all, create a minimal one so we can attach schools to it
     if (!userDoc.exists) {
-      showToast('User profile not found', 'error');
-      return;
+      console.warn('No user profile found on login — creating one.');
+      await userDocRef.set({
+        email: currentUser.email,
+        name: currentUser.displayName || currentUser.email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        schools: {}
+      }, { merge: true });
+      userDoc = await userDocRef.get();
     }
-    
-    const userData = userDoc.data();
-    const schoolIds = Object.keys(userData.schools || {});
-    
+
+    let userData = userDoc.data();
+    let schoolIds = Object.keys(userData.schools || {});
+
+    // SELF-HEAL: If user has no schools attached, scan all schools for a pending
+    // invite matching their email and attach them. This recovers from cases where
+    // the invite-acceptance flow didn't finish attaching schools cleanly.
+    if (schoolIds.length === 0 && currentUser.email) {
+      const email = currentUser.email.toLowerCase();
+      try {
+        const allSchools = await db.collection('schools').get();
+        const repair = {};
+        for (const sd of allSchools.docs) {
+          const memberSnap = await db.collection('schools').doc(sd.id)
+            .collection('members').doc(email).get();
+          if (memberSnap.exists) {
+            const m = memberSnap.data();
+            // Activate the member record if it's still pending
+            try {
+              await memberSnap.ref.update({ userId: currentUser.uid, status: 'active' });
+            } catch (e) { console.warn('Could not activate member record for', sd.id, e); }
+            repair[`schools.${sd.id}`] = m.role || 'user';
+          }
+        }
+        if (Object.keys(repair).length > 0) {
+          await userDocRef.set(repair, { merge: true });
+          userDoc = await userDocRef.get();
+          userData = userDoc.data();
+          schoolIds = Object.keys(userData.schools || {});
+          console.log('Self-healed user schools:', schoolIds);
+        }
+      } catch (e) {
+        console.warn('Could not self-heal user schools:', e);
+      }
+    }
+
     if (schoolIds.length === 0) {
-      showToast('Not assigned to any school', 'error');
+      showToast('Your account has no school assigned. Please contact your administrator.', 'error');
+      // Don't just sit on the login screen — sign the user out so the screen is consistent
+      await auth.signOut();
       return;
     }
 
@@ -822,7 +880,7 @@ async function autoSelectSchool() {
     }
   } catch (error) {
     console.error('Error auto-selecting school:', error);
-    showToast('Error loading school', 'error');
+    showToast('Error loading school: ' + (error.message || error), 'error');
   }
 }
 
@@ -895,6 +953,35 @@ async function doLogin() {
     document.getElementById('loginStep2').style.display = 'none';
   } catch (error) {
     showAuthError(error.message);
+  }
+}
+
+async function doForgotPassword(ev) {
+  if (ev) ev.preventDefault();
+  // Use whatever email is already typed; otherwise prompt
+  let email = (document.getElementById('login-email').value || '').trim().toLowerCase();
+  if (!email) {
+    email = (window.prompt('Enter the email address for your account:') || '').trim().toLowerCase();
+  }
+  if (!email) return;
+
+  try {
+    const actionCodeSettings = {
+      url: window.location.origin + window.location.pathname,
+      handleCodeInApp: false
+    };
+    await auth.sendPasswordResetEmail(email, actionCodeSettings);
+    showAuthSuccess(`Password reset email sent to ${email}. Check your inbox (and spam folder).`);
+  } catch (err) {
+    console.error('Password reset failed:', err);
+    // With email enumeration protection, Firebase intentionally returns the same
+    // success-looking response whether or not the email exists. Show a generic
+    // success message either way so we don't reveal which emails are registered.
+    if (err.code === 'auth/invalid-email') {
+      showAuthError('Please enter a valid email address.');
+    } else {
+      showAuthSuccess(`If an account exists for ${email}, a reset email has been sent.`);
+    }
   }
 }
 
