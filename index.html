@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <!-- Firebase SDKs (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1340,10 +1341,11 @@ async function loadSchoolData() {
     // Update role display
     document.getElementById('userRole').textContent = userRole.toUpperCase();
     
-    // Show/hide tabs based on role — admins AND approvers can access Settings & Reports
-    const canManage = (userRole === 'admin' || userRole === 'approver');
-    document.getElementById('reportsTab').style.display = canManage ? 'block' : 'none';
-    document.getElementById('settingsTab').style.display = canManage ? 'block' : 'none';
+    // Show/hide tabs based on role.
+    // Admins see Reports + Settings. Approvers and users do not.
+    const isAdmin = (userRole === 'admin');
+    document.getElementById('reportsTab').style.display = isAdmin ? 'block' : 'none';
+    document.getElementById('settingsTab').style.display = isAdmin ? 'block' : 'none';
 
     // Load school users
     loadSchoolUsers();
@@ -2099,6 +2101,19 @@ async function openDetail(kind, docId) {
       return;
     }
     const data = snap.data() || {};
+
+    // Permission gate: regular users can ONLY view items they submitted themselves.
+    // Approvers and admins can view items they're approver/admin on or anything respectively.
+    // (This is in addition to Firestore rules — defense in depth.)
+    if (userRole === 'user') {
+      const isMine = (data.createdBy && data.createdBy === currentUser.uid)
+        || (data.requestorEmail && String(data.requestorEmail).toLowerCase() === String(currentUser.email).toLowerCase());
+      if (!isMine) {
+        card.innerHTML = '<div style="padding:40px;text-align:center;color:var(--no-dark);font-weight:700">You don\'t have permission to view this request.</div>';
+        return;
+      }
+    }
+
     _currentDetail = { kind, docId, docRef, data };
     renderDetail(_currentDetail);
   } catch (error) {
@@ -2197,9 +2212,13 @@ function renderDetail(detail) {
       </div>`;
   }
 
-  // Approve/Deny actions — only shown if pending AND current user is the assigned approver (or admin)
-  const iAmApprover = currentUser && (
-    (data.approver && String(data.approver).toLowerCase() === String(currentUser.email).toLowerCase()) ||
+  // Approve/Deny actions — only shown if pending AND current user is the assigned approver (or admin).
+  // We also require role >= approver as a defensive belt-and-suspenders check in case a
+  // user somehow ends up listed as approver on legacy data.
+  const myEmail = (currentUser && currentUser.email ? currentUser.email : '').toLowerCase();
+  const isPrivilegedRole = (userRole === 'admin' || userRole === 'approver');
+  const iAmApprover = currentUser && isPrivilegedRole && (
+    (data.approver && String(data.approver).toLowerCase() === myEmail) ||
     userRole === 'admin'
   );
   const canAct = iAmApprover && status.toLowerCase() === 'pending';
@@ -2235,9 +2254,16 @@ function renderDetail(detail) {
   }
 
   card.innerHTML = `
-    <div style="margin-bottom:20px">
-      <h2 style="font-size:22px;font-weight:900;margin-bottom:4px">${isPO ? 'Purchase Order' : 'Check Request'}</h2>
-      <p style="font-size:13px;color:var(--text-secondary)">Review the full request below</p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+      <div>
+        <h2 style="font-size:22px;font-weight:900;margin-bottom:4px">${isPO ? 'Purchase Order' : 'Check Request'}</h2>
+        <p style="font-size:13px;color:var(--text-secondary)">Review the full request below</p>
+      </div>
+      ${isPO ? `
+        <button onclick="downloadPOPdf()" id="downloadPoBtn" style="padding:10px 16px;border:1.5px solid var(--brand);background:white;color:var(--brand-dark);border-radius:10px;font-family:'Outfit',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:var(--transition);display:flex;align-items:center;gap:8px;white-space:nowrap" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+          ⬇️ Download PDF
+        </button>
+      ` : ''}
     </div>
     <div>${fields}</div>
     ${attachmentsHtml}
@@ -2287,6 +2313,236 @@ async function submitDecision(newStatus) {
 
 function closeModal() {
   document.getElementById('modalBackdrop').classList.remove('active');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PDF EXPORT — Download a Purchase Order as a PDF (with embedded images + audit page)
+// ═══════════════════════════════════════════════════════════════
+
+// Fetch a remote image as a data URL so jsPDF can embed it.
+// Returns { dataUrl, width, height, format } or null on failure.
+async function _fetchImageForPdf(url) {
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) throw new Error('fetch status ' + response.status);
+    const blob = await response.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    // Load to get natural dimensions for proper scaling
+    const dims = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+      img.onerror = () => resolve({ w: 0, h: 0 });
+      img.src = dataUrl;
+    });
+    // jsPDF supports JPEG, PNG, WEBP — derive from MIME type
+    const mime = (blob.type || '').toLowerCase();
+    let format = 'JPEG';
+    if (mime.includes('png')) format = 'PNG';
+    else if (mime.includes('webp')) format = 'WEBP';
+    return { dataUrl, width: dims.w, height: dims.h, format };
+  } catch (err) {
+    console.warn('Could not fetch image for PDF:', url, err);
+    return null;
+  }
+}
+
+async function downloadPOPdf() {
+  if (!_currentDetail || _currentDetail.kind !== 'po') {
+    showToast('No purchase order loaded to download.', 'error');
+    return;
+  }
+  const { data, docId } = _currentDetail;
+  const btn = document.getElementById('downloadPoBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 48;
+    const contentW = pageW - margin * 2;
+
+    // ─────────────── Page 1: PO summary ───────────────
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(22);
+    pdf.text('Purchase Order', margin, margin + 6);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    pdf.setTextColor(110, 110, 110);
+    pdf.text(currentSchool || '', margin, margin + 26);
+
+    // Horizontal rule
+    pdf.setDrawColor(220, 220, 220);
+    pdf.setLineWidth(0.7);
+    pdf.line(margin, margin + 40, pageW - margin, margin + 40);
+
+    pdf.setTextColor(20, 20, 20);
+
+    // Field rows
+    const totalPrice = typeof data.totalPrice === 'number'
+      ? data.totalPrice
+      : parseFloat(data.totalPrice) || 0;
+    const createdAt = _toDate(data.createdAt);
+    const decidedAt = _toDate(data.decidedAt);
+
+    const fields = [
+      ['PO Number',     String(data.poNumber || docId)],
+      ['Status',        String(data.status || 'Pending')],
+      ['Fiscal Year',   String(data.fiscalYear || '—')],
+      ['Vendor',        String(data.vendor || '—')],
+      ['Account #',     String(data.glcode || '—')],
+      ['Total Price',   '$' + totalPrice.toFixed(2)],
+      ['Requested By',  String(data.requestorEmail || '—')],
+      ['Approver',      String(data.approver || '—')],
+      ['Submitted',     createdAt ? _fmtDate(createdAt) + ' · ' + _fmtTime(createdAt) : '—']
+    ];
+
+    let y = margin + 64;
+    pdf.setFontSize(10);
+    for (const [label, value] of fields) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(110, 110, 110);
+      pdf.text(label.toUpperCase(), margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(20, 20, 20);
+      const wrapped = pdf.splitTextToSize(value, contentW - 120);
+      pdf.text(wrapped, margin + 120, y);
+      y += Math.max(18, wrapped.length * 13);
+    }
+
+    // Description block
+    if (data.description) {
+      y += 8;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(110, 110, 110);
+      pdf.text('DESCRIPTION', margin, y);
+      y += 14;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(20, 20, 20);
+      const descLines = pdf.splitTextToSize(String(data.description), contentW);
+      pdf.text(descLines, margin, y);
+      y += descLines.length * 13 + 6;
+    }
+
+    // Attachments listing (names + types — embedded later for images)
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    if (attachments.length) {
+      y += 8;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(110, 110, 110);
+      pdf.text(`ATTACHMENTS (${attachments.length})`, margin, y);
+      y += 14;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(20, 20, 20);
+      for (const a of attachments) {
+        const ct = a.contentType || '';
+        const isImage = ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.name || '');
+        const tag = isImage ? ' (image — included on next pages)' : ' (' + (ct || 'file') + ')';
+        const line = '• ' + String(a.name || 'unnamed') + tag;
+        const lines = pdf.splitTextToSize(line, contentW);
+        if (y + lines.length * 12 > pageH - margin) {
+          pdf.addPage();
+          y = margin;
+        }
+        pdf.text(lines, margin, y);
+        y += lines.length * 12 + 2;
+      }
+    }
+
+    // ─────────────── Pages 2+: One image per page ───────────────
+    const imageAtts = attachments.filter(a => {
+      const ct = a.contentType || '';
+      return ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.name || '');
+    });
+
+    for (const a of imageAtts) {
+      const fetched = await _fetchImageForPdf(a.url);
+      if (!fetched || !fetched.width || !fetched.height) continue;
+
+      pdf.addPage();
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(110, 110, 110);
+      pdf.text(String(a.name || 'Attachment'), margin, margin);
+
+      // Scale image to fit the printable area while preserving aspect ratio
+      const maxW = contentW;
+      const maxH = pageH - margin * 2 - 30;
+      const ratio = Math.min(maxW / fetched.width, maxH / fetched.height);
+      const drawW = fetched.width * ratio;
+      const drawH = fetched.height * ratio;
+      const drawX = margin + (maxW - drawW) / 2;
+      const drawY = margin + 18;
+      try {
+        pdf.addImage(fetched.dataUrl, fetched.format, drawX, drawY, drawW, drawH);
+      } catch (e) {
+        // jsPDF can be picky about formats — fall back to JPEG label
+        try { pdf.addImage(fetched.dataUrl, 'JPEG', drawX, drawY, drawW, drawH); }
+        catch (e2) { console.warn('Could not embed image:', a.name, e2); }
+      }
+    }
+
+    // ─────────────── Final page: Audit log ───────────────
+    pdf.addPage();
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(18);
+    pdf.setTextColor(20, 20, 20);
+    pdf.text('Audit Log', margin, margin + 6);
+
+    pdf.setDrawColor(220, 220, 220);
+    pdf.line(margin, margin + 18, pageW - margin, margin + 18);
+
+    const auditRow = (yPos, label, value) => {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(110, 110, 110);
+      pdf.setFontSize(10);
+      pdf.text(label.toUpperCase(), margin, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(20, 20, 20);
+      pdf.setFontSize(11);
+      const wrapped = pdf.splitTextToSize(String(value || '—'), contentW - 140);
+      pdf.text(wrapped, margin + 140, yPos);
+      return yPos + Math.max(20, wrapped.length * 14);
+    };
+
+    let ay = margin + 44;
+    ay = auditRow(ay, 'PO Number',     data.poNumber || docId);
+    ay = auditRow(ay, 'Created',       createdAt ? _fmtDate(createdAt) + ' at ' + _fmtTime(createdAt) : '—');
+    ay = auditRow(ay, 'Submitted By',  data.requestorEmail || '—');
+    ay = auditRow(ay, 'Approver',      data.approver || '—');
+    ay = auditRow(ay, 'Status',        data.status || 'Pending');
+    ay = auditRow(ay, 'Decision Date', decidedAt ? _fmtDate(decidedAt) + ' at ' + _fmtTime(decidedAt) : '—');
+    ay = auditRow(ay, 'Decided By',    data.decidedBy || '—');
+    if (data.decisionNote) {
+      ay = auditRow(ay, 'Decision Note', data.decisionNote);
+    }
+
+    // Footer with generation timestamp
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(9);
+    pdf.setTextColor(150, 150, 150);
+    const now = new Date();
+    pdf.text(
+      `Document generated ${_fmtDate(now)} at ${_fmtTime(now)} · ${currentSchool || ''}`,
+      margin,
+      pageH - margin / 2
+    );
+
+    pdf.save(`PO-${data.poNumber || docId}.pdf`);
+    showToast('PDF downloaded.', 'success');
+  } catch (err) {
+    console.error('Error generating PDF:', err);
+    showToast('Could not generate PDF: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ Download PDF'; }
+  }
 }
 
 function showToast(msg, type = 'success') {
@@ -2497,8 +2753,13 @@ async function submitPO() {
   try {
     const poNumber = await _allocatePoNumber();
 
-    // Create the Firestore doc first so we have a doc ID to store files under
-    const docRef = await db.collection('schools').doc(currentSchoolId).collection('purchaseOrders').add({
+    // Auto-approve when an approver/admin submits a PO with themselves as approver.
+    // Regular users can't reach this branch — they're not in the approver dropdown.
+    const myEmail = (currentUser.email || '').toLowerCase();
+    const selfApproved = (approver || '').toLowerCase() === myEmail
+      && (userRole === 'admin' || userRole === 'approver');
+
+    const docPayload = {
       poNumber: poNumber,
       fiscalYear: _fiscalYearLabel(new Date()),
       vendor: vendor,
@@ -2506,13 +2767,22 @@ async function submitPO() {
       description: description,
       totalPrice: totalPrice,
       approver: approver,
-      status: 'pending',
+      status: selfApproved ? 'Approved' : 'pending',
       createdBy: currentUser.uid,
       requestorEmail: email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       schoolId: currentSchoolId,
       attachments: []
-    });
+    };
+
+    if (selfApproved) {
+      docPayload.decidedBy = currentUser.email;
+      docPayload.decidedAt = firebase.firestore.FieldValue.serverTimestamp();
+      docPayload.decisionNote = 'Auto-approved: submitted by assigned approver';
+    }
+
+    // Create the Firestore doc first so we have a doc ID to store files under
+    const docRef = await db.collection('schools').doc(currentSchoolId).collection('purchaseOrders').add(docPayload);
 
     // Upload attachments (if any) and patch the doc with the list
     if (_selectedFiles.po.length) {
@@ -2523,8 +2793,10 @@ async function submitPO() {
       }
     }
 
-    showToast('✅ Purchase Order submitted!', 'success');
-    document.getElementById('po-confirmation').textContent = `PO ${poNumber} submitted successfully!`;
+    showToast(selfApproved ? '✅ Purchase Order auto-approved!' : '✅ Purchase Order submitted!', 'success');
+    document.getElementById('po-confirmation').textContent = selfApproved
+      ? `PO ${poNumber} auto-approved (you were the approver).`
+      : `PO ${poNumber} submitted successfully!`;
     document.getElementById('po-confirmation').style.display = 'block';
     form.reset();
     prefillPOForm();
@@ -2626,7 +2898,12 @@ async function submitCheck() {
   try {
     const checkNumber = 'CHK-' + Date.now();
 
-    const docRef = await db.collection('schools').doc(currentSchoolId).collection('checkRequests').add({
+    // Auto-approve when an approver/admin submits with themselves as approver
+    const myEmail = (currentUser.email || '').toLowerCase();
+    const selfApproved = (approver || '').toLowerCase() === myEmail
+      && (userRole === 'admin' || userRole === 'approver');
+
+    const checkPayload = {
       checkNumber: checkNumber,
       checkDate: checkDate,
       amount: amount,
@@ -2634,7 +2911,7 @@ async function submitCheck() {
       approver: approver,
       description: description,
       checkDescription: description,
-      status: 'pending',
+      status: selfApproved ? 'Approved' : 'pending',
       createdBy: currentUser.uid,
       email: email,
       requestorEmail: email,
@@ -2642,7 +2919,14 @@ async function submitCheck() {
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       schoolId: currentSchoolId,
       attachments: []
-    });
+    };
+    if (selfApproved) {
+      checkPayload.decidedBy = currentUser.email;
+      checkPayload.decidedAt = firebase.firestore.FieldValue.serverTimestamp();
+      checkPayload.decisionNote = 'Auto-approved: submitted by assigned approver';
+    }
+
+    const docRef = await db.collection('schools').doc(currentSchoolId).collection('checkRequests').add(checkPayload);
 
     if (_selectedFiles.check.length) {
       if (submitBtn) submitBtn.textContent = 'Uploading files…';
@@ -2652,8 +2936,10 @@ async function submitCheck() {
       }
     }
 
-    showToast('✅ Check Request submitted!', 'success');
-    document.getElementById('check-confirmation').textContent = `Check Request ${checkNumber} submitted successfully!`;
+    showToast(selfApproved ? '✅ Check Request auto-approved!' : '✅ Check Request submitted!', 'success');
+    document.getElementById('check-confirmation').textContent = selfApproved
+      ? `Check Request ${checkNumber} auto-approved (you were the approver).`
+      : `Check Request ${checkNumber} submitted successfully!`;
     document.getElementById('check-confirmation').style.display = 'block';
     form.reset();
     prefillCheckForm();
