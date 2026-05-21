@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
   <!-- Firebase SDKs (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -2351,6 +2352,19 @@ async function _fetchImageForPdf(url) {
   }
 }
 
+// Fetch a remote file as a Uint8Array (used to merge PDF attachments).
+async function _fetchBytesForPdf(url) {
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) throw new Error('fetch status ' + response.status);
+    const buf = await response.arrayBuffer();
+    return new Uint8Array(buf);
+  } catch (err) {
+    console.warn('Could not fetch file for PDF merge:', url, err);
+    return null;
+  }
+}
+
 async function downloadPOPdf() {
   if (!_currentDetail || _currentDetail.kind !== 'po') {
     showToast('No purchase order loaded to download.', 'error');
@@ -2362,11 +2376,6 @@ async function downloadPOPdf() {
 
   try {
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 48;
-    const contentW = pageW - margin * 2;
 
     // ── Palette (matches the Clementine app theme) ──
     const C_BRAND   = [249, 115, 22];
@@ -2383,20 +2392,22 @@ async function downloadPOPdf() {
     const C_NO_BG   = [251, 227, 217];
     const C_PEND    = [161, 98, 7];
     const C_PEND_BG = [254, 243, 199];
-    const setText = c => pdf.setTextColor(c[0], c[1], c[2]);
-    const setFill = c => pdf.setFillColor(c[0], c[1], c[2]);
-    const setDraw = c => pdf.setDrawColor(c[0], c[1], c[2]);
+
+    // Compact "document slip" geometry — narrower than Letter, height fits content.
+    const W = 540;          // page width (≈7.5in)
+    const margin = 40;
+    const contentW = W - margin * 2;
+    const BAND = 84;        // letterhead band height
+    const FOOT = 46;        // reserved footer space
+    // jsPDF swaps w/h to enforce portrait/landscape; pick orientation that preserves width=W.
+    const orientFor = h => (h >= W ? 'portrait' : 'landscape');
 
     const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-    const totalPrice = typeof data.totalPrice === 'number'
-      ? data.totalPrice
-      : parseFloat(data.totalPrice) || 0;
+    const totalPrice = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
     const createdAt = _toDate(data.createdAt);
     const decidedAt = _toDate(data.decidedAt);
     const statusRaw = String(data.status || 'pending');
 
-    // Pick badge colors by status
     const statusColors = (s) => {
       const k = s.toLowerCase();
       if (k.startsWith('appro')) return { fg: C_OK,   bg: C_OK_BG };
@@ -2404,255 +2415,228 @@ async function downloadPOPdf() {
       return { fg: C_PEND, bg: C_PEND_BG };
     };
 
-    // Draw a rounded pill badge; returns its width
-    const drawBadge = (label, x, y, opts = {}) => {
-      const { fg, bg } = opts;
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9);
-      const txt = label.toUpperCase();
-      const w = pdf.getTextWidth(txt) + 20;
-      const h = 18;
-      setFill(bg); setDraw(fg); pdf.setLineWidth(0.8);
-      pdf.roundedRect(x, y - h + 4, w, h, 5, 5, 'FD');
-      setText(fg);
-      pdf.text(txt, x + 10, y - 3);
-      return w;
-    };
-
-    // ── Letterhead band ──
-    const drawLetterhead = () => {
-      setFill(C_DARK);
-      pdf.rect(0, 0, pageW, 96, 'F');
-      setFill(C_BRAND);
-      pdf.rect(0, 0, pageW, 90, 'F');
-      // thin glow strip at the bottom of the band
-      setFill(C_GLOW);
-      pdf.rect(0, 90, pageW, 4, 'F');
-
-      // School name (left)
-      setText(C_WHITE);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(20);
-      pdf.text(currentSchool || 'Millbrook School', margin, 40);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.setTextColor(255, 237, 213);
-      pdf.text('Procurement · Clementine', margin, 58);
-
-      // Document type (right)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(15);
-      setText(C_WHITE);
-      const title = 'PURCHASE ORDER';
-      pdf.text(title, pageW - margin - pdf.getTextWidth(title), 40);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.setTextColor(255, 237, 213);
-      const poLabel = 'No. ' + String(data.poNumber || docId);
-      pdf.text(poLabel, pageW - margin - pdf.getTextWidth(poLabel), 58);
-    };
-
-    // ── Footer band (page number + generated stamp) ──
-    const now = new Date();
-    const drawFooter = (pageLabel) => {
-      setDraw(C_LINE); pdf.setLineWidth(0.8);
-      pdf.line(margin, pageH - 42, pageW - margin, pageH - 42);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setFontSize(8);
-      setText(C_MUTED);
-      pdf.text(`Generated ${_fmtDate(now)} at ${_fmtTime(now)}`, margin, pageH - 28);
-      const right = `${currentSchool || 'Millbrook School'}  ·  ${pageLabel}`;
-      pdf.text(right, pageW - margin - pdf.getTextWidth(right), pageH - 28);
-    };
-
-    // ─────────────── Page 1 ───────────────
-    drawLetterhead();
-    let y = 130;
-
-    // Status + total summary strip
-    const sc = statusColors(statusRaw);
-    setText(C_MUTED);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.text('STATUS', margin, y - 14);
-    drawBadge(statusRaw, margin, y + 4, sc);
-
-    // Total (right aligned, emphasized)
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    setText(C_MUTED);
-    const totLabel = 'TOTAL';
-    pdf.text(totLabel, pageW - margin - pdf.getTextWidth(totLabel), y - 14);
-    pdf.setFontSize(22);
-    setText(C_DARK);
-    const totVal = fmtMoney(totalPrice);
-    pdf.text(totVal, pageW - margin - pdf.getTextWidth(totVal), y + 8);
-
-    y += 34;
-    setDraw(C_LINE); pdf.setLineWidth(1);
-    pdf.line(margin, y, pageW - margin, y);
-    y += 24;
-
-    // ── Details table (two columns, zebra rows, bordered) ──
-    const rows = [
+    // Detail + audit rows
+    const detailRows = [
       ['Fiscal Year',  String(data.fiscalYear || '—')],
       ['Vendor',       String(data.vendor || '—')],
       ['Account #',    String(data.glcode || '—')],
       ['Requested By', String(data.requestorEmail || '—')],
       ['Approver',     String(data.approver || '—')],
-      ['Submitted',    createdAt ? `${_fmtDate(createdAt)} at ${_fmtTime(createdAt)}` : '—']
+      ['Submitted',    createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—']
     ];
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    setText(C_DARK);
-    pdf.text('Order Details', margin, y);
-    y += 12;
-
-    const labelW = 150;
-    const rowH = 26;
-    const tableTop = y;
-    rows.forEach((r, i) => {
-      const ry = y + i * rowH;
-      if (i % 2 === 0) { setFill(C_CREAM); pdf.rect(margin, ry, contentW, rowH, 'F'); }
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9);
-      setText(C_MUTED);
-      pdf.text(r[0].toUpperCase(), margin + 12, ry + 17);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(11);
-      setText(C_TEXT);
-      const wrapped = pdf.splitTextToSize(r[1], contentW - labelW - 24);
-      pdf.text(wrapped, margin + labelW, ry + 17);
-    });
-    const tableBottom = y + rows.length * rowH;
-    // Outer border + column divider
-    setDraw(C_LINE); pdf.setLineWidth(1);
-    pdf.rect(margin, tableTop, contentW, rows.length * rowH, 'S');
-    pdf.line(margin + labelW - 12, tableTop, margin + labelW - 12, tableBottom);
-    y = tableBottom + 28;
-
-    // ── Description ──
-    if (data.description) {
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      setText(C_DARK);
-      pdf.text('Description', margin, y);
-      y += 16;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10.5);
-      setText(C_TEXT);
-      const descLines = pdf.splitTextToSize(String(data.description), contentW);
-      pdf.text(descLines, margin, y);
-      y += descLines.length * 14 + 14;
-    }
-
-    // ── Attachments listing ──
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-    if (attachments.length) {
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      setText(C_DARK);
-      pdf.text(`Attachments (${attachments.length})`, margin, y);
-      y += 16;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      setText(C_TEXT);
-      for (const a of attachments) {
-        const ct = a.contentType || '';
-        const isImage = ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.name || '');
-        const tag = isImage ? '  (image — included on following pages)' : '  (' + (ct || 'file') + ')';
-        const line = '•  ' + String(a.name || 'unnamed') + tag;
-        const lines = pdf.splitTextToSize(line, contentW);
-        if (y + lines.length * 13 > pageH - 60) { pdf.addPage(); drawLetterhead(); y = 130; }
-        pdf.text(lines, margin, y);
-        y += lines.length * 13 + 3;
-      }
-    }
-
-    drawFooter('Page 1');
-
-    // ─────────────── Image pages ───────────────
-    const imageAtts = attachments.filter(a => {
-      const ct = a.contentType || '';
-      return ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.name || '');
-    });
-    let pageNum = 1;
-    for (const a of imageAtts) {
-      const fetched = await _fetchImageForPdf(a.url);
-      if (!fetched || !fetched.width || !fetched.height) continue;
-      pdf.addPage(); pageNum++;
-      drawLetterhead();
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      setText(C_DARK);
-      pdf.text(String(a.name || 'Attachment'), margin, 124);
-
-      const maxW = contentW;
-      const maxH = pageH - 124 - 60;
-      const ratio = Math.min(maxW / fetched.width, maxH / fetched.height);
-      const drawW = fetched.width * ratio;
-      const drawH = fetched.height * ratio;
-      const drawX = margin + (maxW - drawW) / 2;
-      const drawY = 138;
-      try {
-        pdf.addImage(fetched.dataUrl, fetched.format, drawX, drawY, drawW, drawH);
-      } catch (e) {
-        try { pdf.addImage(fetched.dataUrl, 'JPEG', drawX, drawY, drawW, drawH); }
-        catch (e2) { console.warn('Could not embed image:', a.name, e2); }
-      }
-      drawFooter('Page ' + pageNum);
-    }
-
-    // ─────────────── Audit page ───────────────
-    pdf.addPage(); pageNum++;
-    drawLetterhead();
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(15);
-    setText(C_DARK);
-    pdf.text('Audit Log', margin, 128);
-    setDraw(C_LINE); pdf.setLineWidth(1);
-    pdf.line(margin, 138, pageW - margin, 138);
-
     const auditRows = [
       ['PO Number',     String(data.poNumber || docId)],
-      ['Created',       createdAt ? `${_fmtDate(createdAt)} at ${_fmtTime(createdAt)}` : '—'],
+      ['Created',       createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—'],
       ['Submitted By',  String(data.requestorEmail || '—')],
       ['Approver',      String(data.approver || '—')],
       ['Status',        statusRaw],
-      ['Decision Date', decidedAt ? `${_fmtDate(decidedAt)} at ${_fmtTime(decidedAt)}` : '—'],
+      ['Decision Date', decidedAt ? (_fmtDate(decidedAt) + ' at ' + _fmtTime(decidedAt)) : '—'],
       ['Decided By',    String(data.decidedBy || '—')]
     ];
     if (data.decisionNote) auditRows.push(['Decision Note', String(data.decisionNote)]);
 
-    let ay = 162;
-    const aLabelW = 150;
-    const aRowH = 26;
-    const aTop = ay - 18;
-    auditRows.forEach((r, i) => {
-      const ry = aTop + i * aRowH;
-      if (i % 2 === 0) { setFill(C_CREAM); pdf.rect(margin, ry, contentW, aRowH, 'F'); }
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9);
-      setText(C_MUTED);
-      pdf.text(r[0].toUpperCase(), margin + 12, ry + 17);
-      if (r[0] === 'Status') {
-        drawBadge(r[1], margin + aLabelW, ry + 17, statusColors(r[1]));
-      } else {
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(11);
-        setText(C_TEXT);
-        const wrapped = pdf.splitTextToSize(r[1], contentW - aLabelW - 24);
-        pdf.text(wrapped, margin + aLabelW, ry + 17);
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    const isImage = a => (a.contentType || '').startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.name || '');
+    const isPdfAtt = a => (a.contentType || '').toLowerCase().includes('pdf') || /\.pdf$/i.test(a.name || '');
+    const imageAtts = attachments.filter(isImage);
+    const pdfAtts = attachments.filter(isPdfAtt);
+
+    const labelW = 140;
+    const rowH = 24;
+
+    // Bind drawing helpers to a given pdf instance + its page height.
+    const makeKit = (pdf, pageH) => {
+      const setText = c => pdf.setTextColor(c[0], c[1], c[2]);
+      const setFill = c => pdf.setFillColor(c[0], c[1], c[2]);
+      const setDraw = c => pdf.setDrawColor(c[0], c[1], c[2]);
+      const drawBadge = (label, x, y, opts) => {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+        const txt = label.toUpperCase();
+        const w = pdf.getTextWidth(txt) + 20, h = 18;
+        setFill(opts.bg); setDraw(opts.fg); pdf.setLineWidth(0.8);
+        pdf.roundedRect(x, y - h + 4, w, h, 5, 5, 'FD');
+        setText(opts.fg); pdf.text(txt, x + 10, y - 3);
+        return w;
+      };
+      const drawLetterhead = (typeLabel, rightLabel) => {
+        setFill(C_DARK); pdf.rect(0, 0, W, BAND, 'F');
+        setFill(C_BRAND); pdf.rect(0, 0, W, BAND - 4, 'F');
+        setFill(C_GLOW); pdf.rect(0, BAND - 4, W, 4, 'F');
+        setText(C_WHITE);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18);
+        pdf.text(currentSchool || 'Millbrook School', margin, 36);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+        pdf.setTextColor(255, 237, 213);
+        pdf.text('Procurement · Clementine', margin, 53);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13);
+        setText(C_WHITE);
+        pdf.text(typeLabel, W - margin - pdf.getTextWidth(typeLabel), 36);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+        pdf.setTextColor(255, 237, 213);
+        pdf.text(rightLabel, W - margin - pdf.getTextWidth(rightLabel), 53);
+      };
+      const drawFooter = (pageLabel) => {
+        setDraw(C_LINE); pdf.setLineWidth(0.8);
+        pdf.line(margin, pageH - 34, W - margin, pageH - 34);
+        pdf.setFont('helvetica', 'italic'); pdf.setFontSize(8); setText(C_MUTED);
+        pdf.text(`Generated ${_fmtDate(now)} at ${_fmtTime(now)}`, margin, pageH - 20);
+        const right = `PO ${data.poNumber || docId}  ·  ${currentSchool || 'Millbrook School'}`;
+        pdf.text(right, W - margin - pdf.getTextWidth(right), pageH - 20);
+      };
+      const drawTable = (rows, top) => {
+        rows.forEach((r, i) => {
+          const ry = top + i * rowH;
+          if (i % 2 === 0) { setFill(C_CREAM); pdf.rect(margin, ry, contentW, rowH, 'F'); }
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); setText(C_MUTED);
+          pdf.text(r[0].toUpperCase(), margin + 12, ry + 16);
+          if (r[0] === 'Status') {
+            drawBadge(r[1], margin + labelW, ry + 16, statusColors(r[1]));
+          } else {
+            pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10.5); setText(C_TEXT);
+            const wrapped = pdf.splitTextToSize(r[1], contentW - labelW - 24);
+            pdf.text(wrapped, margin + labelW, ry + 16);
+          }
+        });
+        const bottom = top + rows.length * rowH;
+        setDraw(C_LINE); pdf.setLineWidth(1);
+        pdf.rect(margin, top, contentW, rows.length * rowH, 'S');
+        pdf.line(margin + labelW - 12, top, margin + labelW - 12, bottom);
+        return bottom;
+      };
+      return { setText, setFill, setDraw, drawBadge, drawLetterhead, drawFooter, drawTable };
+    };
+
+    const now = new Date();
+
+    // ── Render the summary (page 1) onto a pdf; returns the content-bottom y ──
+    const renderSummary = (pdf, pageH) => {
+      const k = makeKit(pdf, pageH);
+      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      let y = BAND + 34;
+      // Status + total strip
+      k.setText(C_MUTED); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+      pdf.text('STATUS', margin, y - 14);
+      k.drawBadge(statusRaw, margin, y + 4, statusColors(statusRaw));
+      const totLabel = 'TOTAL';
+      pdf.text(totLabel, W - margin - pdf.getTextWidth(totLabel), y - 14);
+      pdf.setFontSize(20); k.setText(C_DARK);
+      const totVal = fmtMoney(totalPrice);
+      pdf.text(totVal, W - margin - pdf.getTextWidth(totVal), y + 8);
+      y += 30;
+      k.setDraw(C_LINE); pdf.setLineWidth(1); pdf.line(margin, y, W - margin, y);
+      y += 24;
+      // Order details
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
+      pdf.text('Order Details', margin, y); y += 12;
+      y = k.drawTable(detailRows, y) + 24;
+      // Description
+      if (data.description) {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
+        pdf.text('Description', margin, y); y += 16;
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10.5); k.setText(C_TEXT);
+        const lines = pdf.splitTextToSize(String(data.description), contentW);
+        pdf.text(lines, margin, y); y += lines.length * 14 + 14;
       }
-    });
-    setDraw(C_LINE); pdf.setLineWidth(1);
-    pdf.rect(margin, aTop, contentW, auditRows.length * aRowH, 'S');
-    pdf.line(margin + aLabelW - 12, aTop, margin + aLabelW - 12, aTop + auditRows.length * aRowH);
+      // Attachments note
+      if (attachments.length) {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
+        pdf.text(`Attachments (${attachments.length})`, margin, y); y += 16;
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10); k.setText(C_TEXT);
+        for (const a of attachments) {
+          const tag = isImage(a) ? '  (image — included below)'
+                    : isPdfAtt(a) ? '  (PDF — appended below)'
+                    : '  (' + ((a.contentType || 'file')) + ')';
+          const lines = pdf.splitTextToSize('•  ' + String(a.name || 'unnamed') + tag, contentW);
+          pdf.text(lines, margin, y); y += lines.length * 13 + 3;
+        }
+      }
+      return y;
+    };
 
-    drawFooter('Page ' + pageNum);
+    // Measure page-1 height with a throwaway tall doc, then build at the exact size.
+    const measureDoc = new jsPDF({ unit: 'pt', format: [W, 2000] });
+    const contentBottom = renderSummary(measureDoc, 2000);
+    const page1H = Math.ceil(contentBottom + FOOT);
 
-    pdf.save(`PO-${data.poNumber || docId}.pdf`);
+    const pdf = new jsPDF({ unit: 'pt', format: [W, page1H], orientation: orientFor(page1H) });
+    renderSummary(pdf, page1H);
+    makeKit(pdf, page1H).drawFooter('Page 1');
+    let pageNum = 1;
+
+    // ── Image attachment pages (snug to each image) ──
+    for (const a of imageAtts) {
+      const fetched = await _fetchImageForPdf(a.url);
+      if (!fetched || !fetched.width || !fetched.height) continue;
+      const fitW = contentW;
+      const scale = fitW / fetched.width;
+      let drawW = fitW, drawH = fetched.height * scale;
+      const capH = 920;
+      if (drawH > capH) { drawH = capH; drawW = fetched.width * (capH / fetched.height); }
+      const imgPageH = Math.ceil(BAND + 24 + drawH + FOOT);
+      pdf.addPage([W, imgPageH], orientFor(imgPageH)); pageNum++;
+      const k = makeKit(pdf, imgPageH);
+      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); k.setText(C_DARK);
+      pdf.text(String(a.name || 'Attachment'), margin, BAND + 18);
+      const drawX = margin + (contentW - drawW) / 2;
+      const drawY = BAND + 24;
+      try { pdf.addImage(fetched.dataUrl, fetched.format, drawX, drawY, drawW, drawH); }
+      catch (e) { try { pdf.addImage(fetched.dataUrl, 'JPEG', drawX, drawY, drawW, drawH); } catch (e2) { console.warn('image embed failed', a.name, e2); } }
+      k.drawFooter('Page ' + pageNum);
+    }
+
+    // ── Audit page (content-sized) ──
+    const auditTop = BAND + 50;
+    const auditH = Math.ceil(auditTop + auditRows.length * rowH + FOOT);
+    pdf.addPage([W, auditH], orientFor(auditH)); pageNum++;
+    {
+      const k = makeKit(pdf, auditH);
+      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14); k.setText(C_DARK);
+      pdf.text('Audit Log', margin, BAND + 30);
+      k.setDraw(C_LINE); pdf.setLineWidth(1); pdf.line(margin, BAND + 38, W - margin, BAND + 38);
+      k.drawTable(auditRows, auditTop);
+      k.drawFooter('Page ' + pageNum);
+    }
+
+    const fileName = `PO-${data.poNumber || docId}.pdf`;
+
+    // ── Merge any PDF attachments so they're part of the downloaded PO ──
+    if (pdfAtts.length && window.PDFLib) {
+      try {
+        const { PDFDocument } = window.PDFLib;
+        const poBytes = pdf.output('arraybuffer');
+        const poDoc = await PDFDocument.load(poBytes);
+        const finalDoc = await PDFDocument.create();
+        const idx = poDoc.getPageIndices();
+        const auditIdx = idx[idx.length - 1];
+        const beforeAudit = idx.slice(0, idx.length - 1);
+        const before = await finalDoc.copyPages(poDoc, beforeAudit);
+        before.forEach(p => finalDoc.addPage(p));
+        for (const a of pdfAtts) {
+          const bytes = await _fetchBytesForPdf(a.url);
+          if (!bytes) continue;
+          try {
+            const att = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            const pages = await finalDoc.copyPages(att, att.getPageIndices());
+            pages.forEach(p => finalDoc.addPage(p));
+          } catch (e) { console.warn('Could not merge PDF attachment:', a.name, e); }
+        }
+        const auditPages = await finalDoc.copyPages(poDoc, [auditIdx]);
+        finalDoc.addPage(auditPages[0]);
+        const out = await finalDoc.save();
+        const blob = new Blob([out], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = fileName; document.body.appendChild(link);
+        link.click(); link.remove(); URL.revokeObjectURL(url);
+      } catch (mergeErr) {
+        console.warn('PDF merge failed, saving without merged attachments:', mergeErr);
+        pdf.save(fileName);
+      }
+    } else {
+      pdf.save(fileName);
+    }
     showToast('PDF downloaded.', 'success');
   } catch (err) {
     console.error('Error generating PDF:', err);
