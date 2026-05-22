@@ -2116,14 +2116,42 @@ async function openDetail(kind, docId) {
     }
 
     _currentDetail = { kind, docId, docRef, data };
-    renderDetail(_currentDetail);
+    await renderDetail(_currentDetail);
   } catch (error) {
     console.error('Error loading detail:', error);
     card.innerHTML = `<div style="padding:40px;text-align:center;color:var(--no-dark);font-weight:700">Error loading request: ${esc(error.message || 'unknown')}</div>`;
   }
 }
 
-function renderDetail(detail) {
+// Resolve a member's display name from their email (members are keyed by email).
+// Falls back to the email itself if no member record/name is found. Cached per email.
+const _memberNameCache = {};
+async function _resolveMemberName(email) {
+  if (!email) return '';
+  const raw = String(email).trim();
+  const key = raw.toLowerCase();
+  if (key in _memberNameCache) return _memberNameCache[key];
+  let name = raw; // fallback: show the email
+  try {
+    if (currentSchoolId) {
+      const col = db.collection('schools').doc(currentSchoolId).collection('members');
+      for (const id of [raw, key]) {
+        const snap = await col.doc(id).get();
+        if (snap.exists) {
+          const m = snap.data() || {};
+          if (m.name || m.displayName) { name = m.name || m.displayName; }
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Could not resolve member name for', email, e);
+  }
+  _memberNameCache[key] = name;
+  return name;
+}
+
+async function renderDetail(detail) {
   const { kind, data } = detail;
   const card = document.getElementById('detailCard');
 
@@ -2137,9 +2165,12 @@ function renderDetail(detail) {
     ? (typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0)
     : (typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0);
 
-  const requestedBy = isPO
-    ? (data.requestorEmail || '—')
-    : (data.email || data.name || '—');
+  const requestedByEmail = isPO
+    ? (data.requestorEmail || '')
+    : (data.requestorEmail || data.email || '');
+  const requestedBy = (await _resolveMemberName(requestedByEmail)) || data.name || requestedByEmail || '—';
+  const approverName = (await _resolveMemberName(data.approver)) || data.approver || '—';
+  const decidedByName = data.decidedBy ? ((await _resolveMemberName(data.decidedBy)) || data.decidedBy) : '';
 
   // Field rows
   const row = (label, value) => value ? `
@@ -2152,7 +2183,7 @@ function renderDetail(detail) {
   fields += row('ID', `<span style="font-weight:700;color:var(--brand-dark)">${esc(isPO ? (data.poNumber || detail.docId) : (data.checkNumber || detail.docId))}</span>`);
   fields += row('Status', `<span style="background:${st.bg};color:${st.color};padding:4px 10px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(status)}</span>`);
   fields += row('Requested By', esc(requestedBy));
-  fields += row('Approver', esc(data.approver || '—'));
+  fields += row('Approver', esc(approverName));
   fields += row('Submitted', createdAt ? `${_fmtDate(createdAt)} · ${_fmtTime(createdAt)}` : '—');
   fields += row('Amount', `<strong>$${amt.toFixed(2)}</strong>`);
 
@@ -2170,7 +2201,7 @@ function renderDetail(detail) {
     fields += row('Decision Note', esc(data.decisionNote).replace(/\n/g, '<br>'));
   }
   if (decidedAt) {
-    fields += row('Decided', `${_fmtDate(decidedAt)} · ${_fmtTime(decidedAt)} ${data.decidedBy ? '· by ' + esc(data.decidedBy) : ''}`);
+    fields += row('Decided', `${_fmtDate(decidedAt)} · ${_fmtTime(decidedAt)} ${decidedByName ? '· by ' + esc(decidedByName) : ''}`);
   }
 
   // Attachments section (if any)
@@ -2251,7 +2282,7 @@ function renderDetail(detail) {
   } else if (status.toLowerCase() !== 'pending') {
     actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">This request has already been <strong style="color:${st.color}">${esc(status.toLowerCase())}</strong>.</div>`;
   } else if (currentUser && data.approver) {
-    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(data.approver)}</strong>.</div>`;
+    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(approverName)}</strong>.</div>`;
   }
 
   card.innerHTML = `
@@ -2260,11 +2291,9 @@ function renderDetail(detail) {
         <h2 style="font-size:22px;font-weight:900;margin-bottom:4px">${isPO ? 'Purchase Order' : 'Check Request'}</h2>
         <p style="font-size:13px;color:var(--text-secondary)">Review the full request below</p>
       </div>
-      ${isPO ? `
-        <button onclick="downloadPOPdf()" id="downloadPoBtn" style="padding:10px 16px;border:1.5px solid var(--brand);background:white;color:var(--brand-dark);border-radius:10px;font-family:'Outfit',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:var(--transition);display:flex;align-items:center;gap:8px;white-space:nowrap" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
-          ⬇️ Download PDF
-        </button>
-      ` : ''}
+      <button onclick="downloadPOPdf()" id="downloadReqBtn" style="padding:10px 16px;border:1.5px solid var(--brand);background:white;color:var(--brand-dark);border-radius:10px;font-family:'Outfit',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:var(--transition);display:flex;align-items:center;gap:8px;white-space:nowrap" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+        ⬇️ Download PDF
+      </button>
     </div>
     <div>${fields}</div>
     ${attachmentsHtml}
@@ -2300,7 +2329,7 @@ async function submitDecision(newStatus) {
     // Re-fetch so the view updates with server timestamps
     const snap = await _currentDetail.docRef.get();
     _currentDetail.data = snap.data() || {};
-    renderDetail(_currentDetail);
+    await renderDetail(_currentDetail);
     // Refresh the dashboard tables in the background
     loadPendingApprovals();
     loadMySubmissions();
@@ -2366,12 +2395,13 @@ async function _fetchBytesForPdf(url) {
 }
 
 async function downloadPOPdf() {
-  if (!_currentDetail || _currentDetail.kind !== 'po') {
-    showToast('No purchase order loaded to download.', 'error');
+  if (!_currentDetail || (_currentDetail.kind !== 'po' && _currentDetail.kind !== 'check')) {
+    showToast('No request loaded to download.', 'error');
     return;
   }
-  const { data, docId } = _currentDetail;
-  const btn = document.getElementById('downloadPoBtn');
+  const { data, docId, kind } = _currentDetail;
+  const isPO = kind === 'po';
+  const btn = document.getElementById('downloadReqBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
 
   try {
@@ -2402,11 +2432,26 @@ async function downloadPOPdf() {
     // jsPDF swaps w/h to enforce portrait/landscape; pick orientation that preserves width=W.
     const orientFor = h => (h >= W ? 'portrait' : 'landscape');
 
+    // Document-type specifics
+    const TYPE_LABEL = isPO ? 'PURCHASE ORDER' : 'CHECK REQUEST';
+    const numberStr  = String((isPO ? data.poNumber : data.checkNumber) || docId);
+    const numLabel   = 'No. ' + numberStr;
+    const filePrefix = isPO ? 'PO' : 'CHK';
+
     const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const totalPrice = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
+    const amount = isPO
+      ? (typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0)
+      : (typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0);
+    const descText = isPO ? data.description : (data.checkDescription || data.description);
     const createdAt = _toDate(data.createdAt);
     const decidedAt = _toDate(data.decidedAt);
     const statusRaw = String(data.status || 'pending');
+
+    // Resolve people to their names (fall back to email if no member record).
+    const requestorEmail = data.requestorEmail || data.email || '';
+    const requestorName = (await _resolveMemberName(requestorEmail)) || data.name || requestorEmail || '—';
+    const approverName = (await _resolveMemberName(data.approver)) || data.approver || '—';
+    const decidedByName = data.decidedBy ? ((await _resolveMemberName(data.decidedBy)) || data.decidedBy) : '—';
 
     const statusColors = (s) => {
       const k = s.toLowerCase();
@@ -2415,23 +2460,29 @@ async function downloadPOPdf() {
       return { fg: C_PEND, bg: C_PEND_BG };
     };
 
-    // Detail + audit rows
-    const detailRows = [
+    // Detail + audit rows (differ by request type)
+    const detailRows = isPO ? [
       ['Fiscal Year',  String(data.fiscalYear || '—')],
       ['Vendor',       String(data.vendor || '—')],
       ['Account #',    String(data.glcode || '—')],
-      ['Requested By', String(data.requestorEmail || '—')],
-      ['Approver',     String(data.approver || '—')],
+      ['Requested By', requestorName],
+      ['Approver',     approverName],
+      ['Submitted',    createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—']
+    ] : [
+      ['Check Date',   String(data.checkDate || '—')],
+      ['Category',     String(data.category || '—')],
+      ['Requested By', requestorName],
+      ['Approver',     approverName],
       ['Submitted',    createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—']
     ];
     const auditRows = [
-      ['PO Number',     String(data.poNumber || docId)],
+      [isPO ? 'PO Number' : 'Check Number', numberStr],
       ['Created',       createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—'],
-      ['Submitted By',  String(data.requestorEmail || '—')],
-      ['Approver',      String(data.approver || '—')],
+      ['Submitted By',  requestorName],
+      ['Approver',      approverName],
       ['Status',        statusRaw],
       ['Decision Date', decidedAt ? (_fmtDate(decidedAt) + ' at ' + _fmtTime(decidedAt)) : '—'],
-      ['Decided By',    String(data.decidedBy || '—')]
+      ['Decided By',    decidedByName]
     ];
     if (data.decisionNote) auditRows.push(['Decision Note', String(data.decisionNote)]);
 
@@ -2440,6 +2491,7 @@ async function downloadPOPdf() {
     const isPdfAtt = a => (a.contentType || '').toLowerCase().includes('pdf') || /\.pdf$/i.test(a.name || '');
     const imageAtts = attachments.filter(isImage);
     const pdfAtts = attachments.filter(isPdfAtt);
+    let attachFailures = 0;  // tracks attachments we couldn't embed (e.g. CORS)
 
     const labelW = 140;
     const rowH = 24;
@@ -2480,7 +2532,7 @@ async function downloadPOPdf() {
         pdf.line(margin, pageH - 34, W - margin, pageH - 34);
         pdf.setFont('helvetica', 'italic'); pdf.setFontSize(8); setText(C_MUTED);
         pdf.text(`Generated ${_fmtDate(now)} at ${_fmtTime(now)}`, margin, pageH - 20);
-        const right = `PO ${data.poNumber || docId}  ·  ${currentSchool || 'Millbrook School'}`;
+        const right = `${isPO ? 'PO' : 'Check'} ${numberStr}  ·  ${currentSchool || 'Millbrook School'}`;
         pdf.text(right, W - margin - pdf.getTextWidth(right), pageH - 20);
       };
       const drawTable = (rows, top) => {
@@ -2511,7 +2563,7 @@ async function downloadPOPdf() {
     // ── Render the summary (page 1) onto a pdf; returns the content-bottom y ──
     const renderSummary = (pdf, pageH) => {
       const k = makeKit(pdf, pageH);
-      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      k.drawLetterhead(TYPE_LABEL, numLabel);
       let y = BAND + 34;
       // Status + total strip
       k.setText(C_MUTED); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
@@ -2520,21 +2572,21 @@ async function downloadPOPdf() {
       const totLabel = 'TOTAL';
       pdf.text(totLabel, W - margin - pdf.getTextWidth(totLabel), y - 14);
       pdf.setFontSize(20); k.setText(C_DARK);
-      const totVal = fmtMoney(totalPrice);
+      const totVal = fmtMoney(amount);
       pdf.text(totVal, W - margin - pdf.getTextWidth(totVal), y + 8);
       y += 30;
       k.setDraw(C_LINE); pdf.setLineWidth(1); pdf.line(margin, y, W - margin, y);
       y += 24;
       // Order details
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
-      pdf.text('Order Details', margin, y); y += 12;
+      pdf.text(isPO ? 'Order Details' : 'Request Details', margin, y); y += 12;
       y = k.drawTable(detailRows, y) + 24;
       // Description
-      if (data.description) {
+      if (descText) {
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
         pdf.text('Description', margin, y); y += 16;
         pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10.5); k.setText(C_TEXT);
-        const lines = pdf.splitTextToSize(String(data.description), contentW);
+        const lines = pdf.splitTextToSize(String(descText), contentW);
         pdf.text(lines, margin, y); y += lines.length * 14 + 14;
       }
       // Attachments note
@@ -2566,7 +2618,7 @@ async function downloadPOPdf() {
     // ── Image attachment pages (snug to each image) ──
     for (const a of imageAtts) {
       const fetched = await _fetchImageForPdf(a.url);
-      if (!fetched || !fetched.width || !fetched.height) continue;
+      if (!fetched || !fetched.width || !fetched.height) { attachFailures++; continue; }
       const fitW = contentW;
       const scale = fitW / fetched.width;
       let drawW = fitW, drawH = fetched.height * scale;
@@ -2575,7 +2627,7 @@ async function downloadPOPdf() {
       const imgPageH = Math.ceil(BAND + 24 + drawH + FOOT);
       pdf.addPage([W, imgPageH], orientFor(imgPageH)); pageNum++;
       const k = makeKit(pdf, imgPageH);
-      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      k.drawLetterhead(TYPE_LABEL, numLabel);
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); k.setText(C_DARK);
       pdf.text(String(a.name || 'Attachment'), margin, BAND + 18);
       const drawX = margin + (contentW - drawW) / 2;
@@ -2591,7 +2643,7 @@ async function downloadPOPdf() {
     pdf.addPage([W, auditH], orientFor(auditH)); pageNum++;
     {
       const k = makeKit(pdf, auditH);
-      k.drawLetterhead('PURCHASE ORDER', 'No. ' + String(data.poNumber || docId));
+      k.drawLetterhead(TYPE_LABEL, numLabel);
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14); k.setText(C_DARK);
       pdf.text('Audit Log', margin, BAND + 30);
       k.setDraw(C_LINE); pdf.setLineWidth(1); pdf.line(margin, BAND + 38, W - margin, BAND + 38);
@@ -2599,7 +2651,7 @@ async function downloadPOPdf() {
       k.drawFooter('Page ' + pageNum);
     }
 
-    const fileName = `PO-${data.poNumber || docId}.pdf`;
+    const fileName = `${filePrefix}-${numberStr}.pdf`;
 
     // ── Merge any PDF attachments so they're part of the downloaded PO ──
     if (pdfAtts.length && window.PDFLib) {
@@ -2615,7 +2667,7 @@ async function downloadPOPdf() {
         before.forEach(p => finalDoc.addPage(p));
         for (const a of pdfAtts) {
           const bytes = await _fetchBytesForPdf(a.url);
-          if (!bytes) continue;
+          if (!bytes) { attachFailures++; continue; }
           try {
             const att = await PDFDocument.load(bytes, { ignoreEncryption: true });
             const pages = await finalDoc.copyPages(att, att.getPageIndices());
@@ -2637,7 +2689,11 @@ async function downloadPOPdf() {
     } else {
       pdf.save(fileName);
     }
-    showToast('PDF downloaded.', 'success');
+    if (attachFailures > 0) {
+      showToast(`Downloaded, but ${attachFailures} attachment(s) couldn't be embedded (storage permissions). They're listed by name in the PDF.`, 'error');
+    } else {
+      showToast('PDF downloaded.', 'success');
+    }
   } catch (err) {
     console.error('Error generating PDF:', err);
     showToast('Could not generate PDF: ' + (err.message || err), 'error');
