@@ -173,6 +173,25 @@
     .role-approver{background:#fef3c7;color:#78350f;border:1px solid #fbbf24}
     .role-user{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 
+    /* Line item editor */
+    .li-table{width:100%;border-collapse:collapse;font-size:13px}
+    .li-table th{padding:8px 10px;text-align:left;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-secondary);border-bottom:2px solid var(--line)}
+    .li-table td{padding:6px 6px;vertical-align:top;border-bottom:1px solid var(--line-light)}
+    .li-table input,.li-table select,.li-table textarea{width:100%;padding:9px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;color:var(--text);background:white;outline:none;transition:var(--transition)}
+    .li-table input:focus,.li-table select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-light)}
+    .li-table input[readonly]{background:var(--line-light);color:var(--muted)}
+    .li-total{text-align:right;font-weight:800;color:var(--text);white-space:nowrap;padding-top:16px!important}
+    .li-del{border:1.5px solid var(--line);background:white;color:var(--no-dark);width:32px;height:36px;border-radius:9px;font-weight:700;cursor:pointer;transition:var(--transition)}
+    .li-del:hover{background:var(--no-light);border-color:var(--no)}
+    .li-add{border:1.5px dashed var(--brand);background:var(--brand-light);color:var(--brand-dark);padding:10px 16px;border-radius:10px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:var(--transition);margin-top:10px}
+    .li-add:hover{background:var(--accent-light)}
+    .li-grand{display:flex;justify-content:flex-end;align-items:baseline;gap:14px;margin-top:16px;padding-top:16px;border-top:2px solid var(--line)}
+    .li-grand-label{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--text-secondary)}
+    .li-grand-value{font-size:26px;font-weight:900;color:var(--brand-dark)}
+    .settings-section{margin-top:28px;padding-top:28px;border-top:1px solid var(--line)}
+    .chip-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:white}
+    .chip-row:last-child{border-bottom:none}
+
     @media(max-width:600px){
       .form-row{grid-template-columns:1fr}
       .schools-grid{grid-template-columns:1fr}
@@ -309,9 +328,14 @@
 
             <!-- MY SUBMISSIONS SECTION -->
             <div id="mySubmissionsSection" style="margin-top:28px">
-              <div style="margin-bottom:18px">
-                <h3 style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px">My Submissions</h3>
-                <p style="font-size:13px;color:var(--text-secondary)">Track your Purchase Orders and Check Requests</p>
+              <div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+                <div>
+                  <h3 style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px">My Submissions</h3>
+                  <p style="font-size:13px;color:var(--text-secondary)">Track your Purchase Orders and Check Requests</p>
+                </div>
+                <div class="form-group" style="margin:0;min-width:240px">
+                  <input type="text" id="subSearch" placeholder="Search ID, vendor, amount, status…" oninput="renderMySubmissions()">
+                </div>
               </div>
               
               <div style="overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--line)">
@@ -331,6 +355,9 @@
                     <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div id="subShowMoreWrap" style="text-align:center;margin-top:14px;display:none">
+                <button class="btn-secondary" onclick="showMoreSubmissions()" id="subShowMoreBtn">Show more</button>
               </div>
             </div>
           </div>
@@ -384,13 +411,66 @@
               <button class="btn-primary" style="flex:1;min-width:180px;margin-top:0" onclick="runBulkImport()">Import Users</button>
             </div>
             <div id="bulkImportResult" style="margin-top:16px;display:none"></div>
+
+          <!-- ── Chart of Accounts ── -->
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Chart of Accounts</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+              Accounts listed here appear as a dropdown on purchase orders, so GL codes stay consistent across reports.
+            </p>
+            <div style="background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px" id="accountsList">
+              <div style="padding:16px;text-align:center;color:var(--muted)">Loading accounts…</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Account #</label><input type="text" id="newAccountCode" placeholder="e.g. 5100-200"></div>
+              <div class="form-group"><label>Account Name</label><input type="text" id="newAccountName" placeholder="e.g. Athletics — Supplies"></div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn-secondary" onclick="showBulkAccountsModal()">Bulk Paste</button>
+              <button class="btn-primary" style="flex:1;min-width:180px;margin-top:0" onclick="addAccount()">Add Account</button>
+            </div>
+          </div>
+
+          <!-- ── Budgets ── -->
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Budgets</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+              Set an annual amount per account. The Encumbrances report measures approved commitments against these figures.
+            </p>
+            <div class="form-group" style="max-width:220px">
+              <label>Fiscal Year</label>
+              <select id="budgetFy" onchange="loadBudgetEditor()"></select>
+            </div>
+            <div id="budgetEditor" style="border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:white">
+              <div style="padding:16px;text-align:center;color:var(--muted)">Loading…</div>
+            </div>
+            <button class="btn-primary" onclick="saveBudgets()">Save Budgets</button>
+          </div>
+
+          <!-- ── Approval Tiers ── -->
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Approval Tiers</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+              Route purchase orders by dollar amount. A request is limited to the approver whose tier covers its total.
+              Leave the top tier's limit blank to mean "no upper limit". With tiers off, submitters pick any approver.
+            </p>
+            <label style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:var(--text);margin-bottom:16px;cursor:pointer">
+              <input type="checkbox" id="tiersEnabled" style="width:18px;height:18px;accent-color:var(--brand);cursor:pointer">
+              Enforce approval tiers
+            </label>
+            <div id="tiersEditor" style="border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:white;margin-bottom:12px">
+              <div style="padding:16px;text-align:center;color:var(--muted)">Loading…</div>
+            </div>
+            <button type="button" class="li-add" onclick="addTierRow()">+ Add tier</button>
+            <button class="btn-primary" onclick="saveApprovalTiers()">Save Tiers</button>
+          </div>
           </div>
         </div>
       </div>
 
       <!-- Placeholder for other tabs -->
       <div class="screen" id="tabPO">
-        <div class="form-container">
+        <div class="form-container-wide" style="max-width:980px">
           <div class="form-card">
             <div class="form-header">
               <div class="form-header-icon">📋</div>
@@ -398,13 +478,42 @@
               <p class="form-subtitle">Fill in the details below</p>
             </div>
             <form id="poForm" onsubmit="return false">
-              <div class="form-group"><label>Employee Name</label><input type="text" id="po-employee" name="employee" readonly></div>
               <div class="form-row">
-                <div class="form-group"><label>Vendor</label><input type="text" name="vendor" required placeholder="Vendor name"></div>
-                <div class="form-group"><label>Account #</label><input type="text" name="glcode" required placeholder="GL / Account code"></div>
+                <div class="form-group"><label>Employee Name</label><input type="text" id="po-employee" name="employee" readonly></div>
+                <div class="form-group">
+                  <label>Vendor</label>
+                  <input type="text" name="vendor" id="po-vendor" required placeholder="Vendor name" list="vendorList" autocomplete="off">
+                  <datalist id="vendorList"></datalist>
+                  <div class="form-hint">Start typing to reuse an existing vendor — keeps reporting clean.</div>
+                </div>
               </div>
-              <div class="form-group"><label>Description</label><textarea name="description" required placeholder="What is this purchase for?"></textarea></div>
-              <div class="form-group"><label>Total Price ($)</label><input type="number" step="0.01" name="totalPrice" required placeholder="0.00"></div>
+
+              <div class="form-group">
+                <label>Line Items</label>
+                <div style="border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:12px;background:var(--card-alt)">
+                  <table class="li-table">
+                    <thead>
+                      <tr>
+                        <th style="width:38%">Description</th>
+                        <th style="width:11%">Qty</th>
+                        <th style="width:16%">Unit Price</th>
+                        <th style="width:20%">Account #</th>
+                        <th style="width:12%;text-align:right">Total</th>
+                        <th style="width:44px"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="po-lineitems"></tbody>
+                  </table>
+                  <button type="button" class="li-add" onclick="addLineItem()">+ Add line item</button>
+                  <div class="li-grand">
+                    <span class="li-grand-label">Order Total</span>
+                    <span class="li-grand-value" id="po-grand-total">$0.00</span>
+                  </div>
+                </div>
+                <div class="form-hint" id="po-approver-hint" style="margin-top:8px"></div>
+              </div>
+
+              <div class="form-group"><label>Notes <span style="color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label><textarea name="description" placeholder="Anything the approver should know about this purchase"></textarea></div>
               <div class="form-group"><label>Approver</label><select name="approver" id="po-approver" required><option value="" disabled selected>Select an approver</option></select></div>
               <div class="form-group"><label>Your Email</label><input type="email" id="po-email" name="requestorEmail" readonly></div>
               <div class="form-group">
@@ -442,7 +551,10 @@
                 <div class="form-group"><label>Date</label><input type="date" name="checkDate" required></div>
                 <div class="form-group"><label>Amount ($)</label><input type="number" step="0.01" name="checkAmount" required placeholder="0.00"></div>
               </div>
-              <div class="form-group"><label>Category</label><select name="checkCategory" required><option value="" disabled selected>Select category</option><option>Travel</option><option>Meals & Entertainment</option><option>Office Supplies</option><option>Software / Subscriptions</option><option>Equipment</option><option>Other</option></select></div>
+              <div class="form-row">
+                <div class="form-group"><label>Category</label><select name="checkCategory" required><option value="" disabled selected>Select category</option><option>Travel</option><option>Meals &amp; Entertainment</option><option>Office Supplies</option><option>Software / Subscriptions</option><option>Equipment</option><option>Other</option></select></div>
+                <div class="form-group"><label>Account #</label><select name="checkGlcode" id="check-glcode"><option value="">— none —</option></select></div>
+              </div>
               <div class="form-group"><label>Approver</label><select name="checkApprover" id="check-approver" required><option value="" disabled selected>Select an approver</option></select></div>
               <div class="form-group"><label>Description</label><textarea name="checkDescription" required placeholder="Describe the expense..."></textarea></div>
               <div class="form-group">
@@ -464,25 +576,59 @@
         </div>
       </div>
       <div class="screen" id="tabReports">
-        <div class="form-container">
-          <div class="form-card" style="max-width:1000px;padding:28px">
+        <div class="form-container-wide">
+          <div class="form-card" style="padding:28px">
             <div class="form-header">
               <div class="form-header-icon">📊</div>
-              <h2 class="form-title">Reports & Export</h2>
-              <p class="form-subtitle">Filter your data and download as Excel</p>
+              <h2 class="form-title">Reports &amp; Export</h2>
+              <p class="form-subtitle">Filter transactions, track encumbrances, export to Excel</p>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:20px">
-              <div class="form-group" style="margin:0"><label>Type</label><select id="rptType" onchange="applyReportFilters()"><option value="all">All</option><option value="po">Purchase Orders</option><option value="check">Check Requests</option></select></div>
-              <div class="form-group" style="margin:0"><label>Status</label><select id="rptStatus" onchange="applyReportFilters()"><option value="all">All</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Denied">Denied</option></select></div>
-              <div class="form-group" style="margin:0"><label>From Date</label><input type="date" id="rptFrom" onchange="applyReportFilters()"></div>
-              <div class="form-group" style="margin:0"><label>To Date</label><input type="date" id="rptTo" onchange="applyReportFilters()"></div>
-              <div class="form-group" style="margin:0"><label>Employee</label><input type="text" id="rptEmployee" placeholder="Any" onchange="applyReportFilters()"></div>
-              <div class="form-group" style="margin:0"><label>Vendor</label><input type="text" id="rptVendor" placeholder="Any" onchange="applyReportFilters()"></div>
+
+            <div class="nav-pills" style="display:inline-flex;margin-bottom:22px">
+              <button class="nav-pill active" id="rptViewTxBtn" onclick="switchReportView('tx')">Transactions</button>
+              <button class="nav-pill" id="rptViewEncBtn" onclick="switchReportView('enc')">Encumbrances</button>
             </div>
-            <button class="btn-primary" style="width:auto;display:inline-block" onclick="downloadReport()">📥 Download Excel</button>
-            <div id="rptTable" style="margin-top:20px"></div>
-            <div id="rptEmpty" style="text-align:center;color:var(--text-secondary);padding:40px"></div>
-            <div style="padding:16px;text-align:right;color:var(--muted);font-size:13px;font-weight:600" id="rptCount"></div>
+
+            <!-- ── Transactions ── -->
+            <div id="rptViewTx">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:18px">
+                <div class="form-group" style="margin:0"><label>Type</label><select id="rptType" onchange="applyReportFilters()"><option value="all">All</option><option value="po">Purchase Orders</option><option value="check">Check Requests</option></select></div>
+                <div class="form-group" style="margin:0"><label>Status</label><select id="rptStatus" onchange="applyReportFilters()"><option value="all">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="denied">Denied</option><option value="paid">Paid</option><option value="void">Void</option></select></div>
+                <div class="form-group" style="margin:0"><label>Fiscal Year</label><select id="rptFy" onchange="applyReportFilters()"><option value="all">All</option></select></div>
+                <div class="form-group" style="margin:0"><label>From Date</label><input type="date" id="rptFrom" onchange="applyReportFilters()"></div>
+                <div class="form-group" style="margin:0"><label>To Date</label><input type="date" id="rptTo" onchange="applyReportFilters()"></div>
+                <div class="form-group" style="margin:0"><label>Requester</label><input type="text" id="rptEmployee" placeholder="Any" oninput="applyReportFilters()"></div>
+                <div class="form-group" style="margin:0"><label>Vendor</label><input type="text" id="rptVendor" placeholder="Any" oninput="applyReportFilters()"></div>
+                <div class="form-group" style="margin:0"><label>Account #</label><input type="text" id="rptGl" placeholder="Any" oninput="applyReportFilters()"></div>
+              </div>
+
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
+                <button class="btn-primary" style="width:auto;margin-top:0" onclick="downloadReport()">📥 Download Excel</button>
+                <button class="btn-secondary" onclick="resetReportFilters()">Clear Filters</button>
+                <span id="rptCount" style="margin-left:auto;color:var(--text-secondary);font-size:13px;font-weight:700"></span>
+              </div>
+
+              <div id="rptTotals" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
+              <div id="rptTable" style="overflow-x:auto"></div>
+              <div id="rptEmpty" style="text-align:center;color:var(--text-secondary);padding:40px"></div>
+            </div>
+
+            <!-- ── Encumbrances ── -->
+            <div id="rptViewEnc" style="display:none">
+              <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px">
+                <div class="form-group" style="margin:0;min-width:180px">
+                  <label>Fiscal Year</label>
+                  <select id="encFy" onchange="loadEncumbranceReport()"></select>
+                </div>
+                <button class="btn-primary" style="width:auto;margin-top:0" onclick="downloadEncumbranceReport()">📥 Download Excel</button>
+                <span id="encSummary" style="margin-left:auto;color:var(--text-secondary);font-size:13px;font-weight:700"></span>
+              </div>
+              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5">
+                <strong>Encumbered</strong> = approved but not yet marked paid. <strong>Spent</strong> = marked paid.
+                <strong>Remaining</strong> = budget − (encumbered + spent). Budget figures are set in Settings.
+              </p>
+              <div id="encTable" style="overflow-x:auto"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -623,8 +769,16 @@ auth.onAuthStateChanged(async (user) => {
     // will route to the dashboard once it finishes.
     if (window._suppressAutoSelect) return;
     
-    // Check if user is developer
-    if (user.email === 'abe.staats21@gmail.com') {
+    // Developer access: prefer a custom auth claim, fall back to the
+    // hardcoded email so nothing breaks before the claim is set.
+    let isDev = false;
+    try {
+      const token = await user.getIdTokenResult();
+      isDev = token && token.claims && token.claims.developer === true;
+    } catch (e) { console.warn('Could not read auth claims:', e); }
+    if (!isDev && user.email === 'abe.staats21@gmail.com') isDev = true;
+
+    if (isDev) {
       showScreen('screenDeveloper');
     } else {
       await loadUserSchools();
@@ -686,6 +840,13 @@ async function handleEmailLinkSignIn() {
 // Activate the user's pending member record in the invited school and add it
 // to their /users/{uid}.schools map. Used both during account setup and when
 // an existing user clicks an invite link.
+// Remove a consumed invite so the index doesn't grow unbounded.
+async function _consumeInvite(email) {
+  try {
+    await db.collection('invites').doc(String(email).toLowerCase()).delete();
+  } catch (e) { /* harmless if rules or absence block it */ }
+}
+
 async function _attachUserToInvitedSchool(uid, email, schoolId) {
   try {
     const memberRef = db.collection('schools').doc(schoolId).collection('members').doc(email);
@@ -696,6 +857,7 @@ async function _attachUserToInvitedSchool(uid, email, schoolId) {
     await db.collection('users').doc(uid).set({
       [`schools.${schoolId}`]: member.role || 'user'
     }, { merge: true });
+    _consumeInvite(email);
   } catch (e) {
     console.warn('Could not attach user to invited school:', e);
   }
@@ -770,10 +932,29 @@ function showAccountSetupModal(firebaseUser, email, schoolIdFromLink) {
         schools: {}
       };
 
-      // Find every school where this email has a pending member doc and
-      // collect them. Activate the member record as we go.
+      // Fast path — the invites index names the school in one read.
+      let indexed = false;
       try {
-        const allSchools = await db.collection('schools').get();
+        const invite = await _lookupInvite(email);
+        if (invite && invite.schoolId) {
+          const memberRef = db.collection('schools').doc(invite.schoolId)
+            .collection('members').doc(email);
+          const memberSnap = await memberRef.get();
+          const role = (memberSnap.exists && memberSnap.data().role) || invite.role || 'user';
+          await memberRef.set({
+            email: email, name: name, role: role,
+            userId: firebaseUser.uid, status: 'active'
+          }, { merge: true });
+          userDocPayload.schools[invite.schoolId] = role;
+          indexed = true;
+        }
+      } catch (e) {
+        console.warn('Invite index lookup failed during setup:', e);
+      }
+
+      // Slow path — scan every school for a pending member doc.
+      try {
+        const allSchools = indexed ? { docs: [] } : await db.collection('schools').get();
         for (const sd of allSchools.docs) {
           const memberSnap = await db.collection('schools').doc(sd.id)
             .collection('members').doc(email).get();
@@ -837,6 +1018,20 @@ async function autoSelectSchool() {
     // SELF-HEAL: If user has no schools attached, scan all schools for a pending
     // invite matching their email and attach them. This recovers from cases where
     // the invite-acceptance flow didn't finish attaching schools cleanly.
+    if (schoolIds.length === 0 && currentUser.email) {
+      const email = currentUser.email.toLowerCase();
+
+      // Fast path: the invites index tells us the school in one read.
+      const invite = await _lookupInvite(email);
+      if (invite && invite.schoolId) {
+        await _attachUserToInvitedSchool(currentUser.uid, email, invite.schoolId);
+        userDoc = await userDocRef.get();
+        userData = userDoc.data();
+        schoolIds = Object.keys(userData.schools || {});
+      }
+    }
+
+    // Slow path: scan every school. Only runs when the index missed.
     if (schoolIds.length === 0 && currentUser.email) {
       const email = currentUser.email.toLowerCase();
       try {
@@ -1021,11 +1216,32 @@ async function doRegister() {
       schools: {}
     };
 
-    // Check if this email is in any school's pending members.
-    // Try both the lowercased email and the original typed-in version as doc IDs,
-    // because older invites might have been stored with different casing.
-    const allSchools = await db.collection('schools').get();
+    // Fast path — the invites index names the school in a single read.
     let foundSchool = false;
+    const invite = await _lookupInvite(email);
+    if (invite && invite.schoolId) {
+      try {
+        const memberRef = db.collection('schools').doc(invite.schoolId)
+          .collection('members').doc(email);
+        const memberSnap = await memberRef.get();
+        const role = (memberSnap.exists && memberSnap.data().role) || invite.role || 'user';
+        await memberRef.set({
+          email: email, name: name, role: role,
+          userId: res.user.uid, status: 'active',
+          addedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        userDoc.schools[invite.schoolId] = role;
+        foundSchool = true;
+      } catch (e) {
+        console.warn('Invite fast path failed, falling back to scan:', e);
+      }
+    }
+
+    // Slow path — scan every school's members. Only runs when the index missed.
+    // Tries both casings because older invites may have been stored differently.
+    const allSchools = foundSchool
+      ? { docs: [] }
+      : await db.collection('schools').get();
     const candidateIds = emailRaw && emailRaw !== email ? [email, emailRaw] : [email];
     
     for (const schoolDoc of allSchools.docs) {
@@ -1298,6 +1514,9 @@ async function loadUserSchools() {
 }
 
 function selectSchool(schoolId, schoolName) {
+  _clearRegistryCaches();
+  _reportCache = null;
+  _submissionRows = [];
   currentSchoolId = schoolId;
   currentSchool = schoolName;
   document.getElementById('currentSchoolBadge').textContent = schoolName;
@@ -1430,6 +1649,7 @@ async function changeUserRole(memberEmail, newRole) {
   try {
     await db.collection('schools').doc(currentSchoolId)
       .collection('members').doc(memberEmail).update({ role: normalized });
+    _approversCache = null;
     showToast(`Role updated to ${normalized}`);
     loadSchoolUsers();
   } catch (err) {
@@ -1448,6 +1668,7 @@ async function removeUserFromSchool(memberEmail) {
   try {
     await db.collection('schools').doc(currentSchoolId)
       .collection('members').doc(memberEmail).delete();
+    _approversCache = null;
     showToast(`Removed ${memberEmail}`);
     loadSchoolUsers();
   } catch (err) {
@@ -1486,6 +1707,34 @@ async function sendInviteEmail(email, schoolId) {
   }
 }
 
+// A top-level invites/{email} index. Without it, registration has to read every
+// school's members subcollection to discover where a new user belongs.
+async function _writeInviteIndex(email, schoolId, role, name) {
+  try {
+    await db.collection('invites').doc(String(email).toLowerCase()).set({
+      email: String(email).toLowerCase(),
+      schoolId: schoolId,
+      role: role || 'user',
+      name: name || null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    // Non-fatal: the slower full scan still works as a fallback
+    console.warn('Could not write invite index:', e);
+  }
+}
+
+// Look up a user's school via the index; returns null if there's no entry.
+async function _lookupInvite(email) {
+  try {
+    const snap = await db.collection('invites').doc(String(email).toLowerCase()).get();
+    return snap.exists ? (snap.data() || null) : null;
+  } catch (e) {
+    console.warn('Invite lookup failed:', e);
+    return null;
+  }
+}
+
 async function inviteUserToSchool() {
   const email = document.getElementById('inviteEmail').value.trim().toLowerCase();
   const role = document.getElementById('inviteRole').value;
@@ -1505,6 +1754,9 @@ async function inviteUserToSchool() {
       addedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
+    // Index the invite so sign-up is a single read instead of a full scan
+    await _writeInviteIndex(email, currentSchoolId, role, 'Pending');
+
     // Send the actual email invitation via Firebase Auth email link
     const emailResult = await sendInviteEmail(email, currentSchoolId);
     if (emailResult.ok) {
@@ -1514,6 +1766,7 @@ async function inviteUserToSchool() {
       showToast(`Added ${email} but email failed: ${emailResult.error}`, 'error');
     }
 
+    _approversCache = null;
     document.getElementById('inviteEmail').value = '';
     document.getElementById('inviteRole').value = 'user';
     loadSchoolUsers();
@@ -1720,6 +1973,18 @@ async function runBulkImport() {
   }
   progressLine.innerHTML = summary;
 
+  // Index every invite so those users get a fast single-read sign-up
+  for (let i = 0; i < toWrite.length; i += 450) {
+    const batch = db.batch();
+    toWrite.slice(i, i + 450).forEach(u => {
+      batch.set(db.collection('invites').doc(u.email), {
+        email: u.email, schoolId: currentSchoolId, role: u.role, name: u.name,
+        createdAt: serverTs
+      }, { merge: true });
+    });
+    try { await batch.commit(); } catch (e) { console.warn('invite index batch failed', e); }
+  }
+
   // Send invitation emails to everyone we just wrote (sequential, with short pause
   // between sends to stay under Firebase's per-IP email rate limits).
   if (toWrite.length > 0) {
@@ -1847,20 +2112,35 @@ function switchTab(tabName) {
   
   // Load submissions when Dashboard tab is opened
   if (tabName === 'dashboard') {
+    _subLimit = SUB_PAGE_SIZE;
     loadMySubmissions();
     loadPendingApprovals();
   }
   
+  if (tabName === 'reports') {
+    _reportCache = null; // always pull fresh numbers when the tab is opened
+    applyReportFilters();
+  }
+
   // Load approvers when PO tab is opened
   if (tabName === 'po') {
+    if (!_lineItems.length) resetLineItems(); else renderLineItems();
+    loadVendorDatalist();
     loadApproversForPO();
     prefillPOForm();
   }
-  
+
   // Load approvers and prefill when Check tab is opened
   if (tabName === 'check') {
     loadApproversForCheck();
+    loadAccountsForCheck();
     prefillCheckForm();
+  }
+
+  if (tabName === 'settings') {
+    renderAccountsList();
+    loadBudgetEditor();
+    loadTiersEditor();
   }
 }
 
@@ -1890,19 +2170,43 @@ function _toDate(v) {
 }
 function _fmtDate(d) { return d ? d.toLocaleDateString() : '—'; }
 function _fmtTime(d) { return d ? d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : ''; }
-function _statusStyle(status) {
-  const s = String(status || '').toLowerCase();
-  return {
-    color: s === 'approved' ? 'var(--ok-dark)' : s === 'denied' ? 'var(--no-dark)' : 'var(--brand-dark)',
-    bg:    s === 'approved' ? 'var(--ok-light)' : s === 'denied' ? 'var(--no-light)' : 'var(--brand-light)'
-  };
+// Canonical status keys. Everything is stored lowercase; reads stay tolerant of
+// legacy docs that used 'Pending' / 'Approved' casing.
+const STATUS_PENDING  = 'pending';
+const STATUS_APPROVED = 'approved';
+const STATUS_DENIED   = 'denied';
+const STATUS_PAID     = 'paid';
+const STATUS_VOID     = 'void';
+
+function _statusKey(s) {
+  const k = String(s == null ? '' : s).trim().toLowerCase();
+  if (k.startsWith('appro')) return STATUS_APPROVED;
+  if (k.startsWith('den') || k.startsWith('rej')) return STATUS_DENIED;
+  if (k.startsWith('paid')) return STATUS_PAID;
+  if (k.startsWith('void') || k.startsWith('cancel')) return STATUS_VOID;
+  return STATUS_PENDING;
 }
+function _statusLabel(s) {
+  const k = _statusKey(s);
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+function _statusStyle(status) {
+  const s = _statusKey(status);
+  if (s === STATUS_APPROVED) return { color: 'var(--ok-dark)',    bg: 'var(--ok-light)' };
+  if (s === STATUS_DENIED)   return { color: 'var(--no-dark)',    bg: 'var(--no-light)' };
+  if (s === STATUS_PAID)     return { color: '#1e4f7a',           bg: '#dbeafe' };
+  if (s === STATUS_VOID)     return { color: 'var(--muted)',      bg: 'var(--line-light)' };
+  return { color: 'var(--brand-dark)', bg: 'var(--brand-light)' };
+}
+
+// An encumbrance is money committed but not yet disbursed.
+function _isEncumbered(status) { return _statusKey(status) === STATUS_APPROVED; }
 
 async function loadMySubmissions() {
   const tbody = document.getElementById('mySubmissionsTable');
   if (!tbody) return;
   if (!currentSchoolId || !currentUser) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">Loading...</td></tr>';
     return;
   }
 
@@ -1959,21 +2263,59 @@ async function loadMySubmissions() {
       return tb - ta;
     });
 
-    if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">No submissions yet — your POs and check requests will appear here.</td></tr>';
-      return;
-    }
+    _submissionRows = rows;
+    _subLimit = SUB_PAGE_SIZE;
+    renderMySubmissions();
+  } catch (error) {
+    console.error('Error loading submissions:', error);
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">Could not load submissions (${esc(error.code || error.message || 'unknown error')}).</td></tr>`;
+  }
+}
 
-    const display = rows.slice(0, 20);
-    let html = '';
-    display.forEach(row => {
-      const st = _statusStyle(row.status);
-      html += `<tr onclick="openDetail('${row.kind}','${esc(row.docId)}')" style="border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s;color:var(--text)" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+// ───────────────── My Submissions rendering (search + paging) ─────────────────
+let _submissionRows = [];
+let _subLimit = 25;
+const SUB_PAGE_SIZE = 25;
+
+function showMoreSubmissions() {
+  _subLimit += SUB_PAGE_SIZE;
+  renderMySubmissions();
+}
+
+function renderMySubmissions() {
+  const tbody = document.getElementById('mySubmissionsTable');
+  if (!tbody) return;
+  const wrap = document.getElementById('subShowMoreWrap');
+  const btn = document.getElementById('subShowMoreBtn');
+  const q = ((document.getElementById('subSearch') || {}).value || '').trim().toLowerCase();
+
+  const matches = !q ? _submissionRows : _submissionRows.filter(r =>
+    String(r.id).toLowerCase().includes(q) ||
+    String(r.details).toLowerCase().includes(q) ||
+    _statusLabel(r.status).toLowerCase().includes(q) ||
+    String(r.type).toLowerCase().includes(q)
+  );
+
+  if (!_submissionRows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">No submissions yet — your POs and check requests will appear here.</td></tr>';
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  if (!matches.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">Nothing matches &ldquo;${esc(q)}&rdquo;.</td></tr>`;
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+
+  const display = matches.slice(0, _subLimit);
+  tbody.innerHTML = display.map(row => {
+    const st = _statusStyle(row.status);
+    return `<tr onclick="openDetail('${row.kind}','${esc(row.docId)}')" style="border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s;color:var(--text)" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
         <td style="padding:12px;color:var(--text)">${esc(row.type)}</td>
         <td style="padding:12px;font-weight:700;color:var(--brand-dark)">${esc(row.id)}</td>
         <td style="padding:12px;color:var(--text)">${esc(row.details)}</td>
         <td style="padding:12px">
-          <span style="background:${st.bg};color:${st.color};padding:4px 8px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(row.status)}</span>
+          <span style="background:${st.bg};color:${st.color};padding:4px 8px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(_statusLabel(row.status))}</span>
         </td>
         <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.createdAt)}<br>${_fmtTime(row.createdAt)}</td>
         <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.updatedAt)}<br>${_fmtTime(row.updatedAt)}</td>
@@ -1985,11 +2327,54 @@ async function loadMySubmissions() {
             onmouseout="this.style.background='white';this.style.borderColor='var(--line)'">&#128465;</button>
         </td>
       </tr>`;
+  }).join('');
+
+  if (wrap) {
+    const remaining = matches.length - display.length;
+    wrap.style.display = remaining > 0 ? 'block' : 'none';
+    if (btn && remaining > 0) {
+      btn.textContent = `Show ${Math.min(remaining, SUB_PAGE_SIZE)} more (${remaining} remaining)`;
+    }
+  }
+}
+
+// ───────────────── Append-only event log ─────────────────
+// Decisions overwrite fields on the parent doc, which loses history. Every
+// state change also appends an immutable event so the audit trail survives.
+async function logEvent(kind, docId, type, note, meta) {
+  try {
+    const colName = kind === 'po' ? 'purchaseOrders' : 'checkRequests';
+    await db.collection('schools').doc(currentSchoolId)
+      .collection(colName).doc(docId).collection('events').add({
+        type: type,
+        note: note || null,
+        meta: meta || null,
+        byUid: currentUser ? currentUser.uid : null,
+        byEmail: currentUser ? currentUser.email : null,
+        at: firebase.firestore.FieldValue.serverTimestamp()
+      });
+  } catch (e) {
+    // Never let audit logging break the user's action
+    console.warn('logEvent failed', type, e);
+  }
+}
+
+// Deletions can't live under a doc that no longer exists, so they go to a
+// school-level log instead.
+async function logDeletion(kind, docId, label, meta) {
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('auditLog').add({
+      type: 'deleted',
+      kind: kind,
+      docId: docId,
+      label: label || docId,
+      meta: meta || null,
+      byUid: currentUser ? currentUser.uid : null,
+      byEmail: currentUser ? currentUser.email : null,
+      at: firebase.firestore.FieldValue.serverTimestamp()
     });
-    tbody.innerHTML = html;
-  } catch (error) {
-    console.error('Error loading submissions:', error);
-    tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-secondary)">Could not load submissions (${esc(error.code || error.message || 'unknown error')}).</td></tr>`;
+  } catch (e) {
+    console.warn('logDeletion failed', e);
   }
 }
 
@@ -2033,6 +2418,13 @@ async function deleteSubmission(kind, docId, ev) {
       }
     }
 
+    await logDeletion(kind, docId, label, {
+      amount: (kind === 'po' ? data.totalPrice : data.amount) || 0,
+      status: _statusKey(data.status),
+      attachmentCount: atts.length,
+      storageFailures: failed
+    });
+
     await docRef.delete();
 
     if (failed.length) {
@@ -2041,6 +2433,7 @@ async function deleteSubmission(kind, docId, ev) {
       showToast(`${label} deleted.`, 'success');
     }
 
+    _reportCache = null;
     loadMySubmissions();
     loadPendingApprovals();
   } catch (err) {
@@ -2076,7 +2469,7 @@ async function loadPendingApprovals() {
     ]);
 
     const rows = [];
-    const isPending = (s) => String(s || '').toLowerCase() === 'pending';
+    const isPending = (s) => _statusKey(s) === STATUS_PENDING;
 
     if (poSnap) poSnap.forEach(doc => {
       const data = doc.data() || {};
@@ -2225,9 +2618,8 @@ async function renderDetail(detail) {
   const createdAt = _toDate(data.createdAt);
   const decidedAt = _toDate(data.decidedAt);
 
-  const amt = isPO
-    ? (typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0)
-    : (typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0);
+  const amt = _docAmount(data, kind);
+  const lineItems = Array.isArray(data.lineItems) ? data.lineItems : [];
 
   const requestedByEmail = isPO
     ? (data.requestorEmail || '')
@@ -2245,7 +2637,7 @@ async function renderDetail(detail) {
 
   let fields = '';
   fields += row('ID', `<span style="font-weight:700;color:var(--brand-dark)">${esc(isPO ? (data.poNumber || detail.docId) : (data.checkNumber || detail.docId))}</span>`);
-  fields += row('Status', `<span style="background:${st.bg};color:${st.color};padding:4px 10px;border-radius:6px;font-weight:700;font-size:12px;text-transform:capitalize">${esc(status)}</span>`);
+  fields += row('Status', `<span style="background:${st.bg};color:${st.color};padding:4px 10px;border-radius:6px;font-weight:700;font-size:12px">${esc(_statusLabel(status))}</span>`);
   fields += row('Requested By', esc(requestedBy));
   fields += row('Approver', esc(approverName));
   fields += row('Submitted', createdAt ? `${_fmtDate(createdAt)} · ${_fmtTime(createdAt)}` : '—');
@@ -2253,8 +2645,8 @@ async function renderDetail(detail) {
 
   if (isPO) {
     fields += row('Vendor', esc(data.vendor || '—'));
-    fields += row('Account #', esc(data.glcode || '—'));
-    fields += row('Description', esc(data.description || '—').replace(/\n/g, '<br>'));
+    if (!lineItems.length) fields += row('Account #', esc(data.glcode || '—'));
+    if (data.description) fields += row('Notes', esc(data.description).replace(/\n/g, '<br>'));
   } else {
     fields += row('Category', esc(data.category || '—'));
     fields += row('Check Date', data.checkDate ? esc(data.checkDate) : '—');
@@ -2266,6 +2658,36 @@ async function renderDetail(detail) {
   }
   if (decidedAt) {
     fields += row('Decided', `${_fmtDate(decidedAt)} · ${_fmtTime(decidedAt)} ${decidedByName ? '· by ' + esc(decidedByName) : ''}`);
+  }
+
+  // Line items table
+  let lineItemsHtml = '';
+  if (lineItems.length) {
+    const rowsHtml = lineItems.map(li => `
+      <tr style="border-bottom:1px solid var(--line-light)">
+        <td style="padding:9px 10px;color:var(--text)">${esc(li.description || '—')}</td>
+        <td style="padding:9px 10px;text-align:right;color:var(--text-secondary);white-space:nowrap">${esc(li.qty)}</td>
+        <td style="padding:9px 10px;text-align:right;color:var(--text-secondary);white-space:nowrap">${_money(li.unitPrice)}</td>
+        <td style="padding:9px 10px;color:var(--text-secondary);white-space:nowrap">${esc(li.glcode || '—')}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:700;color:var(--text);white-space:nowrap">${_money(li.total)}</td>
+      </tr>`).join('');
+    const th = (l, a) => `<th style="padding:9px 10px;text-align:${a || 'left'};font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-secondary)">${l}</th>`;
+    lineItemsHtml = `
+      <div style="margin-top:22px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Line Items (${lineItems.length})</div>
+        <div style="border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;background:white">
+            <thead style="background:var(--card-alt);border-bottom:2px solid var(--line)">
+              <tr>${th('Description')}${th('Qty','right')}${th('Unit Price','right')}${th('Account #')}${th('Total','right')}</tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot><tr style="background:var(--card-alt);border-top:2px solid var(--line)">
+              <td colspan="4" style="padding:10px;text-align:right;font-weight:800;color:var(--text)">Total</td>
+              <td style="padding:10px;text-align:right;font-weight:900;color:var(--brand-dark);white-space:nowrap">${_money(amt)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>`;
   }
 
   // Attachments section (if any)
@@ -2317,7 +2739,7 @@ async function renderDetail(detail) {
     (data.approver && String(data.approver).toLowerCase() === myEmail) ||
     userRole === 'admin'
   );
-  const canAct = iAmApprover && status.toLowerCase() === 'pending';
+  const canAct = iAmApprover && _statusKey(status) === STATUS_PENDING;
 
   let actions = '';
   if (canAct) {
@@ -2343,8 +2765,24 @@ async function renderDetail(detail) {
         </div>
       </div>
     `;
-  } else if (status.toLowerCase() !== 'pending') {
-    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">This request has already been <strong style="color:${st.color}">${esc(status.toLowerCase())}</strong>.</div>`;
+  } else if (_statusKey(status) === STATUS_APPROVED && userRole === 'admin') {
+    actions = `
+      <div style="margin-top:28px;padding-top:24px;border-top:2px solid var(--line)">
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:6px">Disbursement</h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+          This amount is currently <strong>encumbered</strong>. Mark it paid once the check clears, or void it to release the funds.
+        </p>
+        <div class="form-group">
+          <label>Check / Reference No. (optional)</label>
+          <input type="text" id="paidRefInput" placeholder="e.g. 10482">
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button onclick="markPaid()" style="flex:1;min-width:140px;padding:13px 20px;border:0;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#1e4f7a);color:white;font-family:'Outfit',sans-serif;font-weight:700;font-size:14px;cursor:pointer">Mark Paid</button>
+          <button onclick="voidRequest()" class="btn-secondary" style="flex:1;min-width:140px;padding:13px 20px">Void</button>
+        </div>
+      </div>`;
+  } else if (_statusKey(status) !== STATUS_PENDING) {
+    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">This request is <strong style="color:${st.color}">${esc(_statusLabel(status))}</strong>.${data.paidReference ? ' Reference: <strong>' + esc(data.paidReference) + '</strong>.' : ''}${data.voidReason ? ' Reason: ' + esc(data.voidReason) : ''}</div>`;
   } else if (currentUser && data.approver) {
     actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(approverName)}</strong>.</div>`;
   }
@@ -2360,9 +2798,109 @@ async function renderDetail(detail) {
       </button>
     </div>
     <div>${fields}</div>
+    ${lineItemsHtml}
     ${attachmentsHtml}
     ${actions}
+    <div id="detailEvents" style="margin-top:28px"></div>
   `;
+
+  renderEventTimeline(detail);
+}
+
+// ───────────────── Event timeline ─────────────────
+async function renderEventTimeline(detail) {
+  const el = document.getElementById('detailEvents');
+  if (!el) return;
+  try {
+    const colName = detail.kind === 'po' ? 'purchaseOrders' : 'checkRequests';
+    const snap = await db.collection('schools').doc(currentSchoolId)
+      .collection(colName).doc(detail.docId).collection('events').get();
+    if (snap.empty) { el.innerHTML = ''; return; }
+
+    const events = [];
+    snap.forEach(d => {
+      const e = d.data() || {};
+      events.push({ type: e.type || 'event', note: e.note, byEmail: e.byEmail, at: _toDate(e.at) });
+    });
+    events.sort((a, b) => (a.at ? a.at.getTime() : 0) - (b.at ? b.at.getTime() : 0));
+
+    const names = {};
+    for (const ev of events) {
+      if (ev.byEmail && !(ev.byEmail in names)) names[ev.byEmail] = await _resolveMemberName(ev.byEmail);
+    }
+
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">History</div>
+      <div style="border-left:2px solid var(--line);padding-left:16px">
+        ${events.map(ev => {
+          const st = _statusStyle(ev.type);
+          return `<div style="margin-bottom:14px;position:relative">
+            <div style="position:absolute;left:-22px;top:4px;width:9px;height:9px;border-radius:50%;background:${st.color}"></div>
+            <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:capitalize">${esc(ev.type)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
+              ${esc(names[ev.byEmail] || ev.byEmail || 'system')}${ev.at ? ' · ' + _fmtDate(ev.at) + ' ' + _fmtTime(ev.at) : ''}
+            </div>
+            ${ev.note ? `<div style="font-size:13px;color:var(--text);margin-top:5px;padding:8px 10px;background:var(--card-alt);border-radius:8px">${esc(ev.note).replace(/\n/g,'<br>')}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+  } catch (e) {
+    console.warn('Could not load history:', e);
+    el.innerHTML = '';
+  }
+}
+
+// ───────────────── Mark paid / void (admins) ─────────────────
+async function markPaid() {
+  if (!_currentDetail) return;
+  const ref = document.getElementById('paidRefInput');
+  const reference = ref ? ref.value.trim() : '';
+  if (!confirm('Mark this as paid? It will move from encumbered to spent in reports.')) return;
+  try {
+    await _currentDetail.docRef.update({
+      status: STATUS_PAID,
+      paidReference: reference || null,
+      paidAt: firebase.firestore.FieldValue.serverTimestamp(),
+      paidBy: currentUser.email,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await logEvent(_currentDetail.kind, _currentDetail.docId, 'paid',
+      reference ? 'Reference: ' + reference : null,
+      { amount: _docAmount(_currentDetail.data, _currentDetail.kind) });
+    _reportCache = null;
+    showToast('Marked paid.', 'success');
+    const snap = await _currentDetail.docRef.get();
+    _currentDetail.data = snap.data() || {};
+    await renderDetail(_currentDetail);
+    loadMySubmissions();
+  } catch (e) {
+    showToast('Could not mark paid: ' + (e.message || e), 'error');
+  }
+}
+
+async function voidRequest() {
+  if (!_currentDetail) return;
+  const reason = (window.prompt('Reason for voiding (required):') || '').trim();
+  if (!reason) { showToast('A reason is required to void.', 'error'); return; }
+  try {
+    await _currentDetail.docRef.update({
+      status: STATUS_VOID,
+      voidReason: reason,
+      voidedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      voidedBy: currentUser.email,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await logEvent(_currentDetail.kind, _currentDetail.docId, 'void', reason,
+      { amount: _docAmount(_currentDetail.data, _currentDetail.kind) });
+    _reportCache = null;
+    showToast('Request voided — funds released.', 'success');
+    const snap = await _currentDetail.docRef.get();
+    _currentDetail.data = snap.data() || {};
+    await renderDetail(_currentDetail);
+    loadMySubmissions();
+  } catch (e) {
+    showToast('Could not void: ' + (e.message || e), 'error');
+  }
 }
 
 async function submitDecision(newStatus) {
@@ -2370,7 +2908,7 @@ async function submitDecision(newStatus) {
   const noteEl = document.getElementById('detailNote');
   const note = noteEl ? noteEl.value.trim() : '';
 
-  if (newStatus === 'Denied' && !note) {
+  if (_statusKey(newStatus) === STATUS_DENIED && !note) {
     showToast('A note is required when denying a request', 'error');
     if (noteEl) noteEl.focus();
     return;
@@ -2382,14 +2920,19 @@ async function submitDecision(newStatus) {
   if (btnD) { btnD.disabled = true; btnD.style.opacity = '.55'; btnD.style.cursor = 'not-allowed'; }
 
   try {
+    const statusKey = _statusKey(newStatus);
     await _currentDetail.docRef.update({
-      status: newStatus,
+      status: statusKey,
       decisionNote: note || null,
       decidedBy: currentUser.email,
       decidedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    showToast(`Request ${newStatus.toLowerCase()}.`, 'success');
+    await logEvent(_currentDetail.kind, _currentDetail.docId, statusKey, note || null, {
+      amount: _docAmount(_currentDetail.data, _currentDetail.kind)
+    });
+    _reportCache = null;
+    showToast(`Request ${statusKey}.`, 'success');
     // Re-fetch so the view updates with server timestamps
     const snap = await _currentDetail.docRef.get();
     _currentDetail.data = snap.data() || {};
@@ -2544,7 +3087,7 @@ async function downloadPOPdf() {
       ['Created',       createdAt ? (_fmtDate(createdAt) + ' at ' + _fmtTime(createdAt)) : '—'],
       ['Submitted By',  requestorName],
       ['Approver',      approverName],
-      ['Status',        statusRaw],
+      ['Status',        _statusLabel(statusRaw)],
       ['Decision Date', decidedAt ? (_fmtDate(decidedAt) + ' at ' + _fmtTime(decidedAt)) : '—'],
       ['Decided By',    decidedByName]
     ];
@@ -2645,10 +3188,52 @@ async function downloadPOPdf() {
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
       pdf.text(isPO ? 'Order Details' : 'Request Details', margin, y); y += 12;
       y = k.drawTable(detailRows, y) + 24;
+      // Line items table
+      const _pdfLines = Array.isArray(data.lineItems) ? data.lineItems : [];
+      if (_pdfLines.length) {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
+        pdf.text('Line Items', margin, y); y += 14;
+
+        const colX = [margin + 8, margin + 250, margin + 310, margin + 380, W - margin - 8];
+        k.setFill(C_CREAM); pdf.rect(margin, y - 10, contentW, 20, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5); k.setText(C_MUTED);
+        pdf.text('DESCRIPTION', colX[0], y + 3);
+        pdf.text('QTY', colX[1], y + 3);
+        pdf.text('UNIT', colX[2], y + 3);
+        pdf.text('ACCOUNT', colX[3], y + 3);
+        pdf.text('TOTAL', colX[4] - pdf.getTextWidth('TOTAL'), y + 3);
+        y += 20;
+
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+        _pdfLines.forEach(li => {
+          const descLines = pdf.splitTextToSize(String(li.description || '—'), 232);
+          const rowH2 = Math.max(descLines.length * 12, 14) + 6;
+          k.setText(C_TEXT);
+          pdf.text(descLines, colX[0], y + 4);
+          pdf.text(String(li.qty == null ? '' : li.qty), colX[1], y + 4);
+          pdf.text(fmtMoney(li.unitPrice), colX[2], y + 4);
+          pdf.text(String(li.glcode || '—'), colX[3], y + 4);
+          const t = fmtMoney(li.total);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(t, colX[4] - pdf.getTextWidth(t), y + 4);
+          pdf.setFont('helvetica', 'normal');
+          y += rowH2;
+          k.setDraw(C_LINE); pdf.setLineWidth(0.5);
+          pdf.line(margin, y - 4, W - margin, y - 4);
+        });
+
+        k.setFill(C_CREAM); pdf.rect(margin, y - 4, contentW, 22, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10.5); k.setText(C_DARK);
+        pdf.text('ORDER TOTAL', colX[0], y + 11);
+        const gt = fmtMoney(amount);
+        pdf.text(gt, colX[4] - pdf.getTextWidth(gt), y + 11);
+        y += 34;
+      }
+
       // Description
       if (descText) {
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); k.setText(C_DARK);
-        pdf.text('Description', margin, y); y += 16;
+        pdf.text(_pdfLines.length ? 'Notes' : 'Description', margin, y); y += 16;
         pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10.5); k.setText(C_TEXT);
         const lines = pdf.splitTextToSize(String(descText), contentW);
         pdf.text(lines, margin, y); y += lines.length * 14 + 14;
@@ -2779,6 +3364,407 @@ function esc(v) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SCHOOL REGISTRIES — chart of accounts, vendors, approval tiers, budgets
+// ═══════════════════════════════════════════════════════════════
+let _accountsCache = null;
+let _vendorsCache = null;
+let _approvalConfigCache = null;
+const _budgetCache = {};
+
+function _clearRegistryCaches() {
+  _approversCache = null;
+  _accountsCache = null;
+  _vendorsCache = null;
+  _approvalConfigCache = null;
+  Object.keys(_budgetCache).forEach(k => delete _budgetCache[k]);
+}
+
+async function loadAccounts(force) {
+  if (_accountsCache && !force) return _accountsCache;
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId).collection('accounts').get();
+    const list = [];
+    snap.forEach(d => {
+      const a = d.data() || {};
+      if (a.active === false) return;
+      list.push({ code: a.code || d.id, name: a.name || '' });
+    });
+    list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
+    _accountsCache = list;
+  } catch (e) {
+    console.warn('Could not load accounts:', e);
+    _accountsCache = [];
+  }
+  return _accountsCache;
+}
+
+async function loadVendors(force) {
+  if (_vendorsCache && !force) return _vendorsCache;
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId).collection('vendors').get();
+    const list = [];
+    snap.forEach(d => { const v = d.data() || {}; if (v.name) list.push(v.name); });
+    list.sort((a, b) => a.localeCompare(b));
+    _vendorsCache = list;
+  } catch (e) {
+    console.warn('Could not load vendors:', e);
+    _vendorsCache = [];
+  }
+  return _vendorsCache;
+}
+
+function _vendorSlug(name) {
+  return String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
+}
+
+// Record the vendor so the next person picks it from the list instead of
+// inventing "Amazon.com" alongside "Amazon".
+async function upsertVendor(name) {
+  const slug = _vendorSlug(name);
+  if (!slug) return;
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('vendors').doc(slug).set({
+      name: String(name).trim(),
+      slug: slug,
+      lastUsed: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    _vendorsCache = null;
+  } catch (e) {
+    console.warn('Could not record vendor:', e);
+  }
+}
+
+async function loadApprovalConfig(force) {
+  if (_approvalConfigCache && !force) return _approvalConfigCache;
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId)
+      .collection('config').doc('approvals').get();
+    const d = snap.exists ? (snap.data() || {}) : {};
+    _approvalConfigCache = {
+      enabled: d.enabled === true,
+      tiers: Array.isArray(d.tiers) ? d.tiers.slice() : []
+    };
+  } catch (e) {
+    console.warn('Could not load approval config:', e);
+    _approvalConfigCache = { enabled: false, tiers: [] };
+  }
+  return _approvalConfigCache;
+}
+
+// Which approver(s) may sign off on this amount? Returns null when tiers are
+// off or unconfigured, meaning "anyone with approver rights".
+function _tierForAmount(config, amount) {
+  if (!config || !config.enabled || !config.tiers.length) return null;
+  const sorted = config.tiers.slice().sort((a, b) => {
+    const av = (a.upTo == null || a.upTo === '') ? Infinity : Number(a.upTo);
+    const bv = (b.upTo == null || b.upTo === '') ? Infinity : Number(b.upTo);
+    return av - bv;
+  });
+  const amt = Number(amount) || 0;
+  for (const t of sorted) {
+    const cap = (t.upTo == null || t.upTo === '') ? Infinity : Number(t.upTo);
+    if (amt <= cap) return t;
+  }
+  return sorted[sorted.length - 1] || null;
+}
+
+async function loadBudgets(fy, force) {
+  if (_budgetCache[fy] && !force) return _budgetCache[fy];
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId)
+      .collection('budgets').doc(String(fy)).get();
+    const d = snap.exists ? (snap.data() || {}) : {};
+    _budgetCache[fy] = (d.lines && typeof d.lines === 'object') ? d.lines : {};
+  } catch (e) {
+    console.warn('Could not load budgets:', e);
+    _budgetCache[fy] = {};
+  }
+  return _budgetCache[fy];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — accounts
+// ═══════════════════════════════════════════════════════════════
+async function renderAccountsList() {
+  const el = document.getElementById('accountsList');
+  if (!el) return;
+  const list = await loadAccounts(true);
+  if (!list.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">No accounts yet — add one below or bulk paste.</div>';
+    return;
+  }
+  el.innerHTML = list.map(a => `
+    <div class="chip-row">
+      <div style="font-weight:700;color:var(--brand-dark);min-width:110px;white-space:nowrap">${esc(a.code)}</div>
+      <div style="flex:1;color:var(--text);min-width:0">${esc(a.name || '—')}</div>
+      <button onclick="removeAccount('${esc(a.code)}')" class="li-del" title="Remove account">&#10005;</button>
+    </div>`).join('');
+}
+
+async function addAccount() {
+  const code = (document.getElementById('newAccountCode').value || '').trim();
+  const name = (document.getElementById('newAccountName').value || '').trim();
+  if (!code) { showToast('Enter an account number', 'error'); return; }
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('accounts')
+      .doc(_safeDocId(code)).set({ code: code, name: name, active: true,
+        addedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    document.getElementById('newAccountCode').value = '';
+    document.getElementById('newAccountName').value = '';
+    _accountsCache = null;
+    await renderAccountsList();
+    await loadBudgetEditor();
+    showToast('Account added.', 'success');
+  } catch (e) {
+    showToast('Could not add account: ' + (e.message || e), 'error');
+  }
+}
+
+async function removeAccount(code) {
+  if (!confirm(`Remove account ${code}?\n\nExisting purchase orders keep the code; it just stops appearing in dropdowns.`)) return;
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('accounts')
+      .doc(_safeDocId(code)).delete();
+    _accountsCache = null;
+    await renderAccountsList();
+    await loadBudgetEditor();
+    showToast('Account removed.', 'success');
+  } catch (e) {
+    showToast('Could not remove: ' + (e.message || e), 'error');
+  }
+}
+
+// Firestore doc IDs can't contain / so normalise account codes for use as IDs
+function _safeDocId(s) {
+  return String(s).trim().replace(/[\/\\#?\[\]*]/g, '_').slice(0, 180);
+}
+
+function showBulkAccountsModal() {
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-header">
+      <span>Bulk Add Accounts</span>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+      One per line as <code style="background:var(--line-light);padding:2px 6px;border-radius:4px">code, name</code>.
+    </p>
+    <div class="form-group">
+      <textarea id="bulkAccountsCsv" rows="10" style="font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="5100-200, Athletics — Supplies&#10;5200-100, Library — Books"></textarea>
+    </div>
+    <button class="btn-primary" onclick="runBulkAccounts()">Import Accounts</button>`;
+  document.getElementById('modalBackdrop').classList.add('active');
+}
+
+async function runBulkAccounts() {
+  const raw = (document.getElementById('bulkAccountsCsv').value || '');
+  const rows = [];
+  raw.split(/\r?\n/).forEach(line => {
+    const t = line.trim();
+    if (!t) return;
+    if (/^code\s*,/i.test(t)) return;
+    const sep = t.search(/[,\t]/);
+    const code = (sep < 0 ? t : t.slice(0, sep)).trim();
+    const name = sep < 0 ? '' : t.slice(sep + 1).trim().replace(/^["']|["']$/g, '');
+    if (code) rows.push({ code, name });
+  });
+  if (!rows.length) { showToast('Nothing to import', 'error'); return; }
+
+  try {
+    const col = db.collection('schools').doc(currentSchoolId).collection('accounts');
+    for (let i = 0; i < rows.length; i += 450) {
+      const batch = db.batch();
+      rows.slice(i, i + 450).forEach(r => {
+        batch.set(col.doc(_safeDocId(r.code)), {
+          code: r.code, name: r.name, active: true,
+          addedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
+    closeModal();
+    _accountsCache = null;
+    await renderAccountsList();
+    await loadBudgetEditor();
+    showToast(`Imported ${rows.length} account${rows.length === 1 ? '' : 's'}.`, 'success');
+  } catch (e) {
+    showToast('Import failed: ' + (e.message || e), 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — budgets
+// ═══════════════════════════════════════════════════════════════
+function _fyOptionsHtml(selected) {
+  const cur = parseInt(_fiscalYearLabel(new Date()), 10);
+  let out = '';
+  for (let y = cur + 1; y >= cur - 3; y--) {
+    const label = String(y).padStart(2, '0');
+    out += `<option value="${label}"${label === selected ? ' selected' : ''}>FY ${label}</option>`;
+  }
+  return out;
+}
+
+async function loadBudgetEditor() {
+  const sel = document.getElementById('budgetFy');
+  const el = document.getElementById('budgetEditor');
+  if (!sel || !el) return;
+  if (!sel.options.length) sel.innerHTML = _fyOptionsHtml(_fiscalYearLabel(new Date()));
+
+  const fy = sel.value || _fiscalYearLabel(new Date());
+  const [accounts, budgets] = await Promise.all([loadAccounts(), loadBudgets(fy, true)]);
+
+  if (!accounts.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">Add accounts first.</div>';
+    return;
+  }
+
+  el.innerHTML = accounts.map(a => `
+    <div class="chip-row">
+      <div style="font-weight:700;color:var(--brand-dark);min-width:110px;white-space:nowrap">${esc(a.code)}</div>
+      <div style="flex:1;color:var(--text-secondary);font-size:13px;min-width:0">${esc(a.name || '')}</div>
+      <div style="width:150px">
+        <input type="number" step="0.01" min="0" placeholder="0.00"
+          data-budget-code="${esc(a.code)}"
+          value="${budgets[a.code] != null ? Number(budgets[a.code]) : ''}"
+          style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px;text-align:right">
+      </div>
+    </div>`).join('');
+}
+
+async function saveBudgets() {
+  const fy = (document.getElementById('budgetFy') || {}).value;
+  if (!fy) return;
+  const lines = {};
+  document.querySelectorAll('[data-budget-code]').forEach(inp => {
+    const code = inp.getAttribute('data-budget-code');
+    const val = parseFloat(inp.value);
+    if (!isNaN(val) && val !== 0) lines[code] = val;
+  });
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('budgets').doc(String(fy)).set({
+      fy: String(fy), lines: lines,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.email
+    }, { merge: true });
+    delete _budgetCache[fy];
+    showToast(`FY ${fy} budgets saved.`, 'success');
+  } catch (e) {
+    showToast('Could not save budgets: ' + (e.message || e), 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — approval tiers
+// ═══════════════════════════════════════════════════════════════
+let _tierRows = [];
+
+async function loadTiersEditor() {
+  const cfg = await loadApprovalConfig(true);
+  const chk = document.getElementById('tiersEnabled');
+  if (chk) chk.checked = cfg.enabled;
+  _tierRows = cfg.tiers.length ? cfg.tiers.slice() : [{ upTo: '', approverEmail: '' }];
+  await renderTiersEditor();
+}
+
+async function renderTiersEditor() {
+  const el = document.getElementById('tiersEditor');
+  if (!el) return;
+  const approvers = await _eligibleApprovers();
+
+  if (!approvers.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">No approvers or admins in this school yet.</div>';
+    return;
+  }
+
+  el.innerHTML = _tierRows.map((t, i) => {
+    const opts = ['<option value="">— select approver —</option>'].concat(
+      approvers.map(a => `<option value="${esc(a.email)}"${String(t.approverEmail || '').toLowerCase() === a.email.toLowerCase() ? ' selected' : ''}>${esc(a.name || a.email)}</option>`)
+    ).join('');
+    return `<div class="chip-row">
+      <div style="font-size:13px;color:var(--text-secondary);white-space:nowrap">Up to</div>
+      <div style="width:140px">
+        <input type="number" step="0.01" min="0" placeholder="no limit" value="${t.upTo == null ? '' : esc(t.upTo)}"
+          oninput="_tierRows[${i}].upTo = this.value"
+          style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px;text-align:right">
+      </div>
+      <div style="flex:1;min-width:0">
+        <select onchange="_tierRows[${i}].approverEmail = this.value"
+          style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px">${opts}</select>
+      </div>
+      <button class="li-del" onclick="removeTierRow(${i})" title="Remove tier">&#10005;</button>
+    </div>`;
+  }).join('');
+}
+
+function addTierRow() {
+  _tierRows.push({ upTo: '', approverEmail: '' });
+  renderTiersEditor();
+}
+function removeTierRow(i) {
+  _tierRows.splice(i, 1);
+  if (!_tierRows.length) _tierRows.push({ upTo: '', approverEmail: '' });
+  renderTiersEditor();
+}
+
+async function saveApprovalTiers() {
+  const enabled = !!(document.getElementById('tiersEnabled') || {}).checked;
+  const tiers = _tierRows
+    .filter(t => t.approverEmail)
+    .map(t => ({
+      upTo: (t.upTo === '' || t.upTo == null) ? null : Number(t.upTo),
+      approverEmail: String(t.approverEmail).trim().toLowerCase()
+    }));
+
+  if (enabled && !tiers.length) {
+    showToast('Add at least one tier with an approver, or turn tiers off.', 'error');
+    return;
+  }
+  // A tier with no upper limit must exist, otherwise large POs have nowhere to go
+  if (enabled && !tiers.some(t => t.upTo == null)) {
+    showToast('One tier must have a blank limit to catch amounts above every threshold.', 'error');
+    return;
+  }
+
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('config').doc('approvals').set({
+      enabled: enabled, tiers: tiers,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.email
+    }, { merge: true });
+    _approvalConfigCache = null;
+    showToast('Approval tiers saved.', 'success');
+  } catch (e) {
+    showToast('Could not save tiers: ' + (e.message || e), 'error');
+  }
+}
+
+// Active approvers/admins only — a pending invitee can't action anything, so
+// letting them be selected just strands the request.
+// Cached because _refreshApproverForAmount() runs on every line-item keystroke.
+let _approversCache = null;
+async function _eligibleApprovers(force) {
+  if (_approversCache && !force) return _approversCache;
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId).collection('members').get();
+    const out = [];
+    snap.forEach(doc => {
+      const m = doc.data() || {};
+      const role = String(m.role || '').trim().toLowerCase();
+      const status = String(m.status || 'active').trim().toLowerCase();
+      if ((role === 'admin' || role === 'approver') && status === 'active') {
+        out.push({ email: m.email || doc.id, name: m.name && m.name !== 'Pending' ? m.name : (m.email || doc.id) });
+      }
+    });
+    out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    _approversCache = out;
+    return out;
+  } catch (e) {
+    console.warn('Could not load approvers:', e);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // PURCHASE ORDERS & CHECK REQUESTS
 // ═══════════════════════════════════════════════════════════════
 // ───────────────── Fiscal Year Helpers ─────────────────
@@ -2794,12 +3780,13 @@ function _fiscalYearLabel(date) {
   return String(endingYear).slice(-2); // "26" not "2026"
 }
 
-// Atomically allocate the next PO number for this school and fiscal year.
-// Counter doc: schools/{id}/counters/po-{FY}  with field { seq: N }
-async function _allocatePoNumber() {
+// Atomically allocate the next sequence number for this school + fiscal year.
+// Counter doc: schools/{id}/counters/{prefix}-{FY}  with field { seq: N }
+// Returns a label like "26-14" (PO) or "C26-7" (check request).
+async function _allocateNumber(prefix, labelPrefix) {
   const fy = _fiscalYearLabel(new Date());
   const counterRef = db.collection('schools').doc(currentSchoolId)
-    .collection('counters').doc('po-' + fy);
+    .collection('counters').doc(prefix + '-' + fy);
 
   const next = await db.runTransaction(async (tx) => {
     const snap = await tx.get(counterRef);
@@ -2809,8 +3796,11 @@ async function _allocatePoNumber() {
     return n;
   });
 
-  return `${fy}-${next}`;
+  return `${labelPrefix || ''}${fy}-${next}`;
 }
+
+async function _allocatePoNumber()    { return _allocateNumber('po', ''); }
+async function _allocateCheckNumber() { return _allocateNumber('check', 'C'); }
 
 // ───────────────── File Attachments (Firebase Storage) ─────────────────
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
@@ -2947,35 +3937,174 @@ function _setupDropzone(formKey) {
   });
 }
 
-async function submitPO() {
-  const form = document.getElementById('poForm');
-  const vendor = form.querySelector('[name="vendor"]').value;
-  const glcode = form.querySelector('[name="glcode"]').value;
-  const description = form.querySelector('[name="description"]').value;
-  const totalPrice = parseFloat(form.querySelector('[name="totalPrice"]').value);
-  const approver = form.querySelector('[name="approver"]').value;
-  const email = document.getElementById('po-email').value;
-  
-  if (!vendor || !glcode || !description || !totalPrice || !approver) {
-    showToast('Please fill in all fields', 'error');
+// ───────────────── Line item editor ─────────────────
+let _lineItems = [];
+let _liSeq = 0;
+
+function resetLineItems() {
+  _lineItems = [];
+  _liSeq = 0;
+  addLineItem();
+}
+
+function addLineItem() {
+  _lineItems.push({ uid: ++_liSeq, description: '', qty: '1', unitPrice: '', glcode: '' });
+  renderLineItems();
+}
+
+function removeLineItem(uid) {
+  _lineItems = _lineItems.filter(li => li.uid !== uid);
+  if (!_lineItems.length) addLineItem();
+  else renderLineItems();
+}
+
+function updateLineItem(uid, field, value) {
+  const li = _lineItems.find(x => x.uid === uid);
+  if (!li) return;
+  li[field] = value;
+  // Only the totals need repainting; re-rendering everything would steal focus
+  _repaintLineTotals();
+}
+
+function _lineTotal(li) {
+  const q = parseFloat(li.qty);
+  const p = parseFloat(li.unitPrice);
+  if (isNaN(q) || isNaN(p)) return 0;
+  return Math.round(q * p * 100) / 100;
+}
+
+function _grandTotal() {
+  return Math.round(_lineItems.reduce((s, li) => s + _lineTotal(li), 0) * 100) / 100;
+}
+
+function _repaintLineTotals() {
+  _lineItems.forEach(li => {
+    const cell = document.getElementById('li-total-' + li.uid);
+    if (cell) cell.textContent = _money(_lineTotal(li));
+  });
+  const g = document.getElementById('po-grand-total');
+  if (g) g.textContent = _money(_grandTotal());
+  _refreshApproverForAmount();
+}
+
+async function renderLineItems() {
+  const tbody = document.getElementById('po-lineitems');
+  if (!tbody) return;
+  const accounts = await loadAccounts();
+
+  const accountOptions = (selected) => {
+    if (!accounts.length) return null; // fall back to free text
+    return ['<option value="">— select —</option>'].concat(
+      accounts.map(a => `<option value="${esc(a.code)}"${a.code === selected ? ' selected' : ''}>${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`)
+    ).join('');
+  };
+
+  tbody.innerHTML = _lineItems.map(li => {
+    const opts = accountOptions(li.glcode);
+    const glField = opts
+      ? `<select onchange="updateLineItem(${li.uid},'glcode',this.value)">${opts}</select>`
+      : `<input type="text" placeholder="GL code" value="${esc(li.glcode)}" oninput="updateLineItem(${li.uid},'glcode',this.value)">`;
+    return `<tr>
+      <td><input type="text" placeholder="What is being purchased" value="${esc(li.description)}" oninput="updateLineItem(${li.uid},'description',this.value)"></td>
+      <td><input type="number" step="any" min="0" value="${esc(li.qty)}" oninput="updateLineItem(${li.uid},'qty',this.value)"></td>
+      <td><input type="number" step="0.01" min="0" placeholder="0.00" value="${esc(li.unitPrice)}" oninput="updateLineItem(${li.uid},'unitPrice',this.value)"></td>
+      <td>${glField}</td>
+      <td class="li-total" id="li-total-${li.uid}">${_money(_lineTotal(li))}</td>
+      <td style="padding-top:12px"><button type="button" class="li-del" onclick="removeLineItem(${li.uid})" title="Remove line">&#10005;</button></td>
+    </tr>`;
+  }).join('');
+
+  _repaintLineTotals();
+}
+
+// Narrow the approver dropdown to whoever the tier config allows for this total.
+async function _refreshApproverForAmount() {
+  const cfg = await loadApprovalConfig();
+  const hint = document.getElementById('po-approver-hint');
+  const select = document.getElementById('po-approver');
+  if (!select) return;
+
+  const amount = _grandTotal();
+  const tier = _tierForAmount(cfg, amount);
+
+  if (!tier) {
+    if (hint) hint.textContent = '';
+    if (select.getAttribute('data-tier-locked') === '1') {
+      select.removeAttribute('data-tier-locked');
+      await loadApproversForPO();
+    }
     return;
   }
 
-  // Bail out if any selected file has an error (oversize etc)
+  const approvers = await _eligibleApprovers();
+  const match = approvers.find(a => a.email.toLowerCase() === String(tier.approverEmail).toLowerCase());
+  const cap = tier.upTo == null ? 'any amount' : 'up to ' + _money(tier.upTo);
+
+  if (!match) {
+    if (hint) hint.innerHTML = `<span style="color:var(--no-dark);font-weight:700">Tier for ${cap} points at ${esc(tier.approverEmail)}, who isn't an active approver. Ask an admin to fix Approval Tiers.</span>`;
+    return;
+  }
+
+  select.setAttribute('data-tier-locked', '1');
+  select.innerHTML = `<option value="${esc(match.email)}" selected>${esc(match.name)}</option>`;
+  if (hint) hint.innerHTML = `Totals ${cap} route to <strong>${esc(match.name)}</strong> under this school's approval tiers.`;
+}
+
+async function submitPO() {
+  const form = document.getElementById('poForm');
+  const vendor = (form.querySelector('[name="vendor"]').value || '').trim();
+  const notes = (form.querySelector('[name="description"]').value || '').trim();
+  const approver = form.querySelector('[name="approver"]').value;
+  const email = document.getElementById('po-email').value;
+
+  // ── Validate line items ──
+  const items = [];
+  for (const li of _lineItems) {
+    const desc = String(li.description || '').trim();
+    const q = parseFloat(li.qty);
+    const p = parseFloat(li.unitPrice);
+    const isBlank = !desc && !li.unitPrice && !li.glcode;
+    if (isBlank) continue; // ignore untouched trailing rows
+    if (!desc) { showToast('Every line item needs a description', 'error'); return; }
+    if (isNaN(q) || q <= 0) { showToast(`Quantity must be greater than zero (${desc})`, 'error'); return; }
+    if (isNaN(p) || p < 0) { showToast(`Enter a unit price for "${desc}"`, 'error'); return; }
+    items.push({
+      description: desc,
+      qty: q,
+      unitPrice: Math.round(p * 100) / 100,
+      glcode: String(li.glcode || '').trim(),
+      total: _lineTotal(li)
+    });
+  }
+
+  if (!items.length) { showToast('Add at least one line item', 'error'); return; }
+  if (!vendor) { showToast('Enter a vendor', 'error'); return; }
+  if (!approver) { showToast('Select an approver', 'error'); return; }
+  if (items.some(li => !li.glcode)) { showToast('Every line item needs an account number', 'error'); return; }
+
+  const totalPrice = Math.round(items.reduce((s, li) => s + li.total, 0) * 100) / 100;
+  if (totalPrice <= 0) { showToast('Order total must be greater than zero', 'error'); return; }
+
+  // ── Enforce tier routing server-side of the UI, in case the select was tampered with ──
+  const cfg = await loadApprovalConfig();
+  const tier = _tierForAmount(cfg, totalPrice);
+  if (tier && String(tier.approverEmail).toLowerCase() !== String(approver).toLowerCase()) {
+    showToast('This amount must be approved by ' + tier.approverEmail, 'error');
+    return;
+  }
+
   if (_selectedFiles.po.some(i => i.error)) {
     showToast('Please remove any invalid attachments before submitting', 'error');
     return;
   }
 
-  // Disable submit button to prevent double-submit (which would burn a PO number)
   const submitBtn = form.querySelector('.btn-primary');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
 
   try {
     const poNumber = await _allocatePoNumber();
 
-    // Auto-approve when an approver/admin submits a PO with themselves as approver.
-    // Regular users can't reach this branch — they're not in the approver dropdown.
+    // Auto-approve when an approver/admin submits with themselves as approver.
     const myEmail = (currentUser.email || '').toLowerCase();
     const selfApproved = (approver || '').toLowerCase() === myEmail
       && (userRole === 'admin' || userRole === 'approver');
@@ -2984,14 +4113,17 @@ async function submitPO() {
       poNumber: poNumber,
       fiscalYear: _fiscalYearLabel(new Date()),
       vendor: vendor,
-      glcode: glcode,
-      description: description,
+      lineItems: items,
+      glcode: items[0].glcode,          // header code kept for legacy reports
+      description: notes,
       totalPrice: totalPrice,
       approver: approver,
-      status: selfApproved ? 'Approved' : 'pending',
+      status: selfApproved ? STATUS_APPROVED : STATUS_PENDING,
       createdBy: currentUser.uid,
       requestorEmail: email,
+      requestorName: currentUser.displayName || email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       schoolId: currentSchoolId,
       attachments: []
     };
@@ -3002,29 +4134,36 @@ async function submitPO() {
       docPayload.decisionNote = 'Auto-approved: submitted by assigned approver';
     }
 
-    // Create the Firestore doc first so we have a doc ID to store files under
-    const docRef = await db.collection('schools').doc(currentSchoolId).collection('purchaseOrders').add(docPayload);
+    const docRef = await db.collection('schools').doc(currentSchoolId)
+      .collection('purchaseOrders').add(docPayload);
 
-    // Upload attachments (if any) and patch the doc with the list
     if (_selectedFiles.po.length) {
       if (submitBtn) submitBtn.textContent = 'Uploading files…';
       const attachments = await uploadFilesToStorage('po', 'po', docRef.id);
-      if (attachments.length) {
-        await docRef.update({ attachments });
-      }
+      if (attachments.length) await docRef.update({ attachments });
     }
 
+    await logEvent('po', docRef.id, 'submitted', notes || null, {
+      poNumber, totalPrice, vendor, lineCount: items.length, approver
+    });
+    if (selfApproved) {
+      await logEvent('po', docRef.id, 'approved', 'Auto-approved: submitter is the assigned approver', { totalPrice });
+    }
+    upsertVendor(vendor);
+
     showToast(selfApproved ? '✅ Purchase Order auto-approved!' : '✅ Purchase Order submitted!', 'success');
-    document.getElementById('po-confirmation').textContent = selfApproved
+    const conf = document.getElementById('po-confirmation');
+    conf.textContent = selfApproved
       ? `PO ${poNumber} auto-approved (you were the approver).`
-      : `PO ${poNumber} submitted successfully!`;
-    document.getElementById('po-confirmation').style.display = 'block';
+      : `PO ${poNumber} submitted — ${_money(totalPrice)} to ${vendor}.`;
+    conf.style.display = 'block';
+
     form.reset();
+    resetLineItems();
     prefillPOForm();
+    loadApproversForPO();
     loadMySubmissions();
-    setTimeout(() => {
-      document.getElementById('po-confirmation').style.display = 'none';
-    }, 4000);
+    setTimeout(() => { conf.style.display = 'none'; }, 5000);
   } catch (error) {
     console.error('Error submitting PO:', error);
     showToast('Error: ' + (error.message || 'could not submit PO'), 'error');
@@ -3033,64 +4172,46 @@ async function submitPO() {
   }
 }
 
-// Load approvers for PO form
+// Load approvers for PO form (active admins/approvers only)
 async function loadApproversForPO() {
-  try {
-    // Load ALL members, filter in code — approvers should appear even while pending
-    const membersSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('members').get();
-    
-    const approvers = [];
-    membersSnap.forEach(doc => {
-      const member = doc.data();
-      const role = String(member.role || '').trim().toLowerCase();
-      const status = String(member.status || '').trim().toLowerCase();
-      // Accept active AND pending so a freshly-invited admin/approver appears immediately
-      if ((role === 'admin' || role === 'approver') && (status === 'active' || status === 'pending' || !status)) {
-        approvers.push({ email: member.email, name: member.name });
-      }
-    });
-
-    const select = document.getElementById('po-approver');
-    select.innerHTML = '<option value="" disabled selected>Select an approver</option>';
-    approvers.forEach(app => {
-      const opt = document.createElement('option');
-      opt.value = app.email;
-      opt.textContent = `${app.name} (${app.email})`;
-      select.appendChild(opt);
-    });
-  } catch (error) {
-    console.error('Error loading approvers:', error);
+  const select = document.getElementById('po-approver');
+  if (!select) return;
+  const approvers = await _eligibleApprovers();
+  select.innerHTML = '<option value="" disabled selected>Select an approver</option>' +
+    approvers.map(a => `<option value="${esc(a.email)}">${esc(a.name)} (${esc(a.email)})</option>`).join('');
+  if (!approvers.length) {
+    select.innerHTML = '<option value="" disabled selected>No active approvers — ask an admin</option>';
   }
+  await _refreshApproverForAmount();
 }
 
 // Load approvers for Check Request form
 async function loadApproversForCheck() {
-  try {
-    const membersSnap = await db.collection('schools').doc(currentSchoolId)
-      .collection('members').get();
-    
-    const approvers = [];
-    membersSnap.forEach(doc => {
-      const member = doc.data();
-      const role = String(member.role || '').trim().toLowerCase();
-      const status = String(member.status || '').trim().toLowerCase();
-      if ((role === 'admin' || role === 'approver') && (status === 'active' || status === 'pending' || !status)) {
-        approvers.push({ email: member.email, name: member.name });
-      }
-    });
-
-    const select = document.getElementById('check-approver');
-    select.innerHTML = '<option value="" disabled selected>Select an approver</option>';
-    approvers.forEach(app => {
-      const opt = document.createElement('option');
-      opt.value = app.email;
-      opt.textContent = `${app.name} (${app.email})`;
-      select.appendChild(opt);
-    });
-  } catch (error) {
-    console.error('Error loading approvers:', error);
+  const select = document.getElementById('check-approver');
+  if (!select) return;
+  const approvers = await _eligibleApprovers();
+  select.innerHTML = '<option value="" disabled selected>Select an approver</option>' +
+    approvers.map(a => `<option value="${esc(a.email)}">${esc(a.name)} (${esc(a.email)})</option>`).join('');
+  if (!approvers.length) {
+    select.innerHTML = '<option value="" disabled selected>No active approvers — ask an admin</option>';
   }
+}
+
+// Populate the check request's account dropdown
+async function loadAccountsForCheck() {
+  const select = document.getElementById('check-glcode');
+  if (!select) return;
+  const accounts = await loadAccounts();
+  select.innerHTML = '<option value="">— none —</option>' +
+    accounts.map(a => `<option value="${esc(a.code)}">${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`).join('');
+}
+
+// Fill the vendor autocomplete list
+async function loadVendorDatalist() {
+  const dl = document.getElementById('vendorList');
+  if (!dl) return;
+  const vendors = await loadVendors();
+  dl.innerHTML = vendors.map(v => `<option value="${esc(v)}"></option>`).join('');
 }
 
 async function submitCheck() {
@@ -3117,27 +4238,32 @@ async function submitCheck() {
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
 
   try {
-    const checkNumber = 'CHK-' + Date.now();
+    const checkNumber = await _allocateCheckNumber();
 
     // Auto-approve when an approver/admin submits with themselves as approver
     const myEmail = (currentUser.email || '').toLowerCase();
     const selfApproved = (approver || '').toLowerCase() === myEmail
       && (userRole === 'admin' || userRole === 'approver');
 
+    const glcode = (form.querySelector('[name="checkGlcode"]') || {}).value || '';
+
     const checkPayload = {
       checkNumber: checkNumber,
+      fiscalYear: _fiscalYearLabel(new Date()),
       checkDate: checkDate,
       amount: amount,
       category: category,
+      glcode: glcode,
       approver: approver,
       description: description,
       checkDescription: description,
-      status: selfApproved ? 'Approved' : 'pending',
+      status: selfApproved ? STATUS_APPROVED : STATUS_PENDING,
       createdBy: currentUser.uid,
       email: email,
       requestorEmail: email,
       name: name,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       schoolId: currentSchoolId,
       attachments: []
     };
@@ -3155,6 +4281,12 @@ async function submitCheck() {
       if (attachments.length) {
         await docRef.update({ attachments });
       }
+    }
+
+    await logEvent('check', docRef.id, 'submitted', description || null,
+      { checkNumber, amount, category, glcode, approver });
+    if (selfApproved) {
+      await logEvent('check', docRef.id, 'approved', 'Auto-approved: submitter is the assigned approver', { amount });
     }
 
     showToast(selfApproved ? '✅ Check Request auto-approved!' : '✅ Check Request submitted!', 'success');
@@ -3176,115 +4308,427 @@ async function submitCheck() {
   }
 }
 
-function applyReportFilters() {
-  const typeF = document.getElementById('rptType').value;
-  const statusF = document.getElementById('rptStatus').value;
-  const fromF = document.getElementById('rptFrom').value;
-  const toF = document.getElementById('rptTo').value;
-  const empF = document.getElementById('rptEmployee').value.toLowerCase();
-  const vendF = document.getElementById('rptVendor').value.toLowerCase();
+// ═══════════════════════════════════════════════════════════════
+// REPORTS
+// ═══════════════════════════════════════════════════════════════
+let _reportRows = [];      // last rendered transaction rows
+let _encRows = [];         // last rendered encumbrance rows
+let _reportCache = null;   // raw docs, fetched once per tab visit
 
-  let poQuery = db.collection('schools').doc(currentSchoolId).collection('purchaseOrders');
-  let checkQuery = db.collection('schools').doc(currentSchoolId).collection('checkRequests');
+function switchReportView(view) {
+  const isTx = view === 'tx';
+  document.getElementById('rptViewTx').style.display = isTx ? 'block' : 'none';
+  document.getElementById('rptViewEnc').style.display = isTx ? 'none' : 'block';
+  document.getElementById('rptViewTxBtn').classList.toggle('active', isTx);
+  document.getElementById('rptViewEncBtn').classList.toggle('active', !isTx);
+  if (!isTx) loadEncumbranceReport();
+}
 
-  if (statusF !== 'all') {
-    poQuery = poQuery.where('status', '==', statusF);
-    checkQuery = checkQuery.where('status', '==', statusF);
-  }
-
-  Promise.all([
-    poQuery.get(),
-    checkQuery.get()
-  ])
-  .then(([poSnap, checkSnap]) => {
-    let rows = [];
-    
-    if (typeF === 'all' || typeF === 'po') {
-      poSnap.forEach(doc => {
-        const data = doc.data();
-        if ((empF === '' || (data.requestorEmail || '').toLowerCase().includes(empF)) &&
-            (vendF === '' || (data.vendor || '').toLowerCase().includes(vendF)) &&
-            (!fromF || new Date(data.createdAt.toDate()) >= new Date(fromF)) &&
-            (!toF || new Date(data.createdAt.toDate()) <= new Date(toF + 'T23:59:59'))) {
-          rows.push({
-            type: 'PO',
-            id: data.poNumber,
-            date: data.createdAt.toDate(),
-            name: data.requestorEmail,
-            vendor: data.vendor,
-            amount: data.totalPrice,
-            status: data.status
-          });
-        }
-      });
-    }
-
-    if (typeF === 'all' || typeF === 'check') {
-      checkSnap.forEach(doc => {
-        const data = doc.data();
-        if ((empF === '' || (data.email || '').toLowerCase().includes(empF)) &&
-            (!fromF || new Date(data.checkDate) >= new Date(fromF)) &&
-            (!toF || new Date(data.checkDate) <= new Date(toF))) {
-          rows.push({
-            type: 'Check',
-            id: data.checkNumber,
-            date: new Date(data.checkDate),
-            name: data.name,
-            category: data.category,
-            amount: data.amount,
-            status: data.status
-          });
-        }
-      });
-    }
-
-    renderReportTable(rows);
+function resetReportFilters() {
+  ['rptFrom','rptTo','rptEmployee','rptVendor','rptGl'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
   });
+  ['rptType','rptStatus','rptFy'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = 'all';
+  });
+  applyReportFilters();
+}
+
+// Populate the fiscal-year dropdowns from the data we actually have.
+function _populateFyOptions(years) {
+  const sorted = Array.from(years).sort().reverse();
+  const rptFy = document.getElementById('rptFy');
+  if (rptFy) {
+    const keep = rptFy.value;
+    rptFy.innerHTML = '<option value="all">All</option>' +
+      sorted.map(y => `<option value="${esc(y)}">FY ${esc(y)}</option>`).join('');
+    if (keep && Array.from(rptFy.options).some(o => o.value === keep)) rptFy.value = keep;
+  }
+  const encFy = document.getElementById('encFy');
+  if (encFy) {
+    const keep = encFy.value;
+    const current = _fiscalYearLabel(new Date());
+    if (!sorted.includes(current)) sorted.unshift(current);
+    encFy.innerHTML = sorted.map(y => `<option value="${esc(y)}">FY ${esc(y)}</option>`).join('');
+    encFy.value = (keep && sorted.includes(keep)) ? keep : current;
+  }
+}
+
+// Fetch every PO + check request once, normalise into plain rows.
+// Filtering happens in JS so we never need a composite index and never trip
+// over legacy status casing.
+async function _fetchReportData(force) {
+  if (_reportCache && !force) return _reportCache;
+
+  const base = db.collection('schools').doc(currentSchoolId);
+  const [poSnap, checkSnap] = await Promise.all([
+    base.collection('purchaseOrders').get(),
+    base.collection('checkRequests').get()
+  ]);
+
+  const rows = [];
+  const years = new Set();
+
+  poSnap.forEach(doc => {
+    const d = doc.data() || {};
+    const created = _toDate(d.createdAt);
+    const fy = d.fiscalYear || (created ? _fiscalYearLabel(created) : '');
+    if (fy) years.add(fy);
+    rows.push({
+      kind: 'po',
+      docId: doc.id,
+      type: 'PO',
+      id: d.poNumber || doc.id,
+      date: created,
+      fy: fy,
+      requester: d.requestorEmail || d.email || '',
+      party: d.vendor || '',
+      glcode: d.glcode || _primaryGl(d),
+      description: d.description || '',
+      amount: _docAmount(d, 'po'),
+      status: _statusKey(d.status),
+      approver: d.approver || '',
+      decidedAt: _toDate(d.decidedAt),
+      lineItems: Array.isArray(d.lineItems) ? d.lineItems : null
+    });
+  });
+
+  checkSnap.forEach(doc => {
+    const d = doc.data() || {};
+    const created = _toDate(d.createdAt);
+    const fy = d.fiscalYear || (created ? _fiscalYearLabel(created) : '');
+    if (fy) years.add(fy);
+    rows.push({
+      kind: 'check',
+      docId: doc.id,
+      type: 'Check',
+      id: d.checkNumber || doc.id,
+      date: _toDate(d.checkDate) || created,
+      fy: fy,
+      requester: d.requestorEmail || d.email || '',
+      party: d.category || '',
+      glcode: d.glcode || '',
+      description: d.checkDescription || d.description || '',
+      amount: _docAmount(d, 'check'),
+      status: _statusKey(d.status),
+      approver: d.approver || '',
+      decidedAt: _toDate(d.decidedAt),
+      lineItems: null
+    });
+  });
+
+  _reportCache = { rows, years };
+  _populateFyOptions(years);
+  return _reportCache;
+}
+
+async function applyReportFilters() {
+  const tableEl = document.getElementById('rptTable');
+  const emptyEl = document.getElementById('rptEmpty');
+  if (!tableEl) return;
+
+  try {
+    const { rows } = await _fetchReportData(false);
+
+    const typeF   = (document.getElementById('rptType')    || {}).value || 'all';
+    const statusF = (document.getElementById('rptStatus')  || {}).value || 'all';
+    const fyF     = (document.getElementById('rptFy')      || {}).value || 'all';
+    const fromF   = (document.getElementById('rptFrom')    || {}).value || '';
+    const toF     = (document.getElementById('rptTo')      || {}).value || '';
+    const empF    = ((document.getElementById('rptEmployee') || {}).value || '').trim().toLowerCase();
+    const vendF   = ((document.getElementById('rptVendor')   || {}).value || '').trim().toLowerCase();
+    const glF     = ((document.getElementById('rptGl')       || {}).value || '').trim().toLowerCase();
+
+    const fromDate = fromF ? new Date(fromF + 'T00:00:00') : null;
+    const toDate   = toF   ? new Date(toF   + 'T23:59:59') : null;
+
+    const filtered = rows.filter(r => {
+      if (typeF === 'po' && r.kind !== 'po') return false;
+      if (typeF === 'check' && r.kind !== 'check') return false;
+      if (statusF !== 'all' && r.status !== statusF) return false;
+      if (fyF !== 'all' && r.fy !== fyF) return false;
+      if (empF && !String(r.requester).toLowerCase().includes(empF)) return false;
+      if (vendF && !String(r.party).toLowerCase().includes(vendF)) return false;
+      if (glF && !String(r.glcode).toLowerCase().includes(glF)) return false;
+      // Rows with no usable date are kept unless a date filter is active
+      if (fromDate && (!r.date || r.date < fromDate)) return false;
+      if (toDate && (!r.date || r.date > toDate)) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
+    _reportRows = filtered;
+    renderReportTable(filtered);
+  } catch (err) {
+    console.error('Report load failed:', err);
+    tableEl.innerHTML = '';
+    if (emptyEl) emptyEl.innerHTML = `<p style="color:var(--no-dark);font-weight:700">Could not load report: ${esc(err.message || err)}</p>`;
+  }
 }
 
 function renderReportTable(rows) {
   const table = document.getElementById('rptTable');
   const empty = document.getElementById('rptEmpty');
   const count = document.getElementById('rptCount');
+  const totalsEl = document.getElementById('rptTotals');
 
   if (!rows || rows.length === 0) {
     table.innerHTML = '';
-    empty.innerHTML = '<p>No records found</p>';
-    count.textContent = '';
+    if (totalsEl) totalsEl.style.display = 'none';
+    empty.innerHTML = '<p>No records match these filters.</p>';
+    if (count) count.textContent = '';
     return;
   }
   empty.innerHTML = '';
 
-  let html = '<thead><tr><th>Type</th><th>ID</th><th>Date</th><th>Name</th><th>Vendor/Category</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+  // Status subtotals
+  const byStatus = {};
+  let grand = 0;
   rows.forEach(r => {
-    const statusClass = r.status === 'Approved' ? 'ok' : r.status === 'Denied' ? 'no' : 'pending';
-    html += `<tr>
-      <td>${r.type}</td>
-      <td>${r.id}</td>
-      <td>${r.date.toLocaleDateString()}</td>
-      <td>${r.name}</td>
-      <td>${r.vendor || r.category || ''}</td>
-      <td>$${r.amount.toFixed(2)}</td>
-      <td><span style="background:${statusClass};color:white;padding:4px 8px;border-radius:4px">${r.status}</span></td>
+    byStatus[r.status] = (byStatus[r.status] || 0) + r.amount;
+    grand += r.amount;
+  });
+
+  if (totalsEl) {
+    const cards = Object.keys(byStatus).sort().map(k => {
+      const st = _statusStyle(k);
+      return `<div style="flex:1;min-width:130px;padding:12px 14px;background:${st.bg};border-radius:var(--radius-sm);border:1px solid ${st.color}33">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${st.color}">${esc(_statusLabel(k))}</div>
+        <div style="font-size:18px;font-weight:900;color:var(--text);margin-top:4px">${_money(byStatus[k])}</div>
+      </div>`;
+    }).join('');
+    totalsEl.innerHTML = cards;
+    totalsEl.style.display = 'flex';
+  }
+
+  const th = (label, align) => `<th style="padding:10px 12px;text-align:${align || 'left'};font-weight:800;color:var(--text);font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${label}</th>`;
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border:1px solid var(--line);border-radius:var(--radius-sm)">
+    <thead style="background:var(--card-alt);border-bottom:2px solid var(--line)">
+      <tr>${th('Type')}${th('ID')}${th('Date')}${th('FY')}${th('Requester')}${th('Vendor / Category')}${th('Account #')}${th('Amount','right')}${th('Status')}</tr>
+    </thead><tbody>`;
+
+  rows.forEach(r => {
+    const st = _statusStyle(r.status);
+    html += `<tr onclick="openDetail('${r.kind}','${esc(r.docId)}')" style="border-bottom:1px solid var(--line-light);cursor:pointer" onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background='white'">
+      <td style="padding:10px 12px;color:var(--text)">${esc(r.type)}</td>
+      <td style="padding:10px 12px;font-weight:700;color:var(--brand-dark);white-space:nowrap">${esc(r.id)}</td>
+      <td style="padding:10px 12px;color:var(--text-secondary);white-space:nowrap">${_fmtDate(r.date)}</td>
+      <td style="padding:10px 12px;color:var(--text-secondary)">${esc(r.fy || '—')}</td>
+      <td style="padding:10px 12px;color:var(--text)">${esc(r.requester || '—')}</td>
+      <td style="padding:10px 12px;color:var(--text)">${esc(r.party || '—')}</td>
+      <td style="padding:10px 12px;color:var(--text-secondary);white-space:nowrap">${esc(r.glcode || '—')}</td>
+      <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--text);white-space:nowrap">${_money(r.amount)}</td>
+      <td style="padding:10px 12px"><span style="background:${st.bg};color:${st.color};padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px">${esc(_statusLabel(r.status))}</span></td>
     </tr>`;
   });
-  html += '</tbody>';
+
+  html += `</tbody><tfoot><tr style="background:var(--card-alt);border-top:2px solid var(--line)">
+    <td colspan="7" style="padding:12px;font-weight:800;color:var(--text);text-align:right">Total</td>
+    <td style="padding:12px;text-align:right;font-weight:900;color:var(--brand-dark);white-space:nowrap">${_money(grand)}</td>
+    <td></td></tr></tfoot></table>`;
+
   table.innerHTML = html;
-
-  const total = rows.reduce((sum, r) => sum + r.amount, 0);
-  count.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''} — Total: $${total.toFixed(2)}`;
+  if (count) count.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
 }
 
+// ── Excel export (SheetJS) ──
 function downloadReport() {
-  showToast('Download feature coming soon', 'error');
+  if (!_reportRows.length) { showToast('Nothing to export — adjust your filters.', 'error'); return; }
+  try {
+    const aoa = [['Type','ID','Date','Fiscal Year','Requester','Vendor / Category','Account #','Description','Amount','Status','Approver','Decided']];
+    _reportRows.forEach(r => aoa.push([
+      r.type, r.id, r.date ? _fmtDate(r.date) : '', r.fy, r.requester,
+      r.party, r.glcode, r.description, Number(r.amount || 0),
+      _statusLabel(r.status), r.approver, r.decidedAt ? _fmtDate(r.decidedAt) : ''
+    ]));
+    const total = _reportRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    aoa.push([]);
+    aoa.push(['', '', '', '', '', '', '', 'TOTAL', total]);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:8},{wch:14},{wch:12},{wch:10},{wch:28},{wch:24},{wch:14},{wch:40},{wch:12},{wch:10},{wch:26},{wch:12}];
+    // Currency format on the amount column
+    for (let i = 2; i <= aoa.length; i++) {
+      const cell = ws['I' + i];
+      if (cell && typeof cell.v === 'number') cell.z = '$#,##0.00';
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `apollo-transactions-${stamp}.xlsx`);
+    showToast('Excel file downloaded.', 'success');
+  } catch (err) {
+    console.error('Excel export failed:', err);
+    showToast('Export failed: ' + (err.message || err), 'error');
+  }
 }
 
-function showToast(msg, type = 'success') {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = msg;
-  toast.className = 'toast ' + type;
-  setTimeout(() => toast.className = 'toast', 3000);
+// ═══════════════════════════════════════════════════════════════
+// ENCUMBRANCE REPORT — approved-but-unpaid commitments vs budget
+// ═══════════════════════════════════════════════════════════════
+async function loadEncumbranceReport() {
+  const tableEl = document.getElementById('encTable');
+  const summaryEl = document.getElementById('encSummary');
+  if (!tableEl) return;
+  tableEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary)">Loading…</div>';
+
+  try {
+    const { rows } = await _fetchReportData(false);
+    const fy = (document.getElementById('encFy') || {}).value || _fiscalYearLabel(new Date());
+
+    const budgets = await loadBudgets(fy);          // { glcode: amount }
+    const accounts = await loadAccounts();          // [{code,name}]
+    const nameFor = {};
+    accounts.forEach(a => { nameFor[a.code] = a.name; });
+
+    // Aggregate by GL code. POs with line items are split per line so the
+    // encumbrance lands against the right account.
+    const agg = {};
+    const bump = (gl, field, amt) => {
+      const key = gl || '(unassigned)';
+      if (!agg[key]) agg[key] = { gl: key, encumbered: 0, spent: 0, pending: 0, count: 0 };
+      agg[key][field] += amt;
+      agg[key].count += 1;
+    };
+
+    rows.forEach(r => {
+      if (r.fy !== fy) return;
+      const status = r.status;
+      let field = null;
+      if (status === STATUS_APPROVED) field = 'encumbered';
+      else if (status === STATUS_PAID) field = 'spent';
+      else if (status === STATUS_PENDING) field = 'pending';
+      else return; // denied / void don't commit funds
+
+      if (r.lineItems && r.lineItems.length) {
+        r.lineItems.forEach(li => bump(li.glcode, field, Number(li.total) || 0));
+      } else {
+        bump(r.glcode, field, Number(r.amount) || 0);
+      }
+    });
+
+    // Include budgeted accounts with no activity so gaps are visible
+    Object.keys(budgets).forEach(gl => {
+      if (!agg[gl]) agg[gl] = { gl: gl, encumbered: 0, spent: 0, pending: 0, count: 0 };
+    });
+
+    const list = Object.values(agg).map(a => {
+      const budget = Number(budgets[a.gl] || 0);
+      const committed = a.encumbered + a.spent;
+      return Object.assign({}, a, {
+        name: nameFor[a.gl] || '',
+        budget: budget,
+        committed: committed,
+        remaining: budget - committed,
+        pctUsed: budget > 0 ? (committed / budget) * 100 : null
+      });
+    }).sort((a, b) => String(a.gl).localeCompare(String(b.gl), undefined, { numeric: true }));
+
+    _encRows = list;
+
+    if (!list.length) {
+      tableEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary)">No activity or budgets for FY ' + esc(fy) + '.</div>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const tot = list.reduce((s, r) => ({
+      budget: s.budget + r.budget, encumbered: s.encumbered + r.encumbered,
+      spent: s.spent + r.spent, pending: s.pending + r.pending,
+      remaining: s.remaining + r.remaining
+    }), { budget: 0, encumbered: 0, spent: 0, pending: 0, remaining: 0 });
+
+    const th = (l, a) => `<th style="padding:10px 12px;text-align:${a || 'left'};font-weight:800;color:var(--text);font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${l}</th>`;
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border:1px solid var(--line);border-radius:var(--radius-sm)">
+      <thead style="background:var(--card-alt);border-bottom:2px solid var(--line)">
+        <tr>${th('Account #')}${th('Name')}${th('Budget','right')}${th('Pending','right')}${th('Encumbered','right')}${th('Spent','right')}${th('Remaining','right')}${th('Used','right')}</tr>
+      </thead><tbody>`;
+
+    list.forEach(r => {
+      const over = r.budget > 0 && r.remaining < 0;
+      const near = r.pctUsed != null && r.pctUsed >= 90 && !over;
+      const rowBg = over ? 'var(--no-light)' : near ? 'var(--cyan-light)' : 'white';
+      html += `<tr style="border-bottom:1px solid var(--line-light);background:${rowBg}">
+        <td style="padding:10px 12px;font-weight:700;color:var(--brand-dark);white-space:nowrap">${esc(r.gl)}</td>
+        <td style="padding:10px 12px;color:var(--text)">${esc(r.name || '—')}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text)">${r.budget ? _money(r.budget) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary)">${r.pending ? _money(r.pending) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--brand-dark)">${r.encumbered ? _money(r.encumbered) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text)">${r.spent ? _money(r.spent) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:800;color:${over ? 'var(--no-dark)' : 'var(--ok-dark)'}">${r.budget ? _money(r.remaining) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary)">${r.pctUsed == null ? '—' : r.pctUsed.toFixed(0) + '%'}</td>
+      </tr>`;
+    });
+
+    html += `</tbody><tfoot><tr style="background:var(--card-alt);border-top:2px solid var(--line);font-weight:900">
+      <td colspan="2" style="padding:12px;color:var(--text)">Total</td>
+      <td style="padding:12px;text-align:right">${_money(tot.budget)}</td>
+      <td style="padding:12px;text-align:right">${_money(tot.pending)}</td>
+      <td style="padding:12px;text-align:right;color:var(--brand-dark)">${_money(tot.encumbered)}</td>
+      <td style="padding:12px;text-align:right">${_money(tot.spent)}</td>
+      <td style="padding:12px;text-align:right;color:${tot.remaining < 0 ? 'var(--no-dark)' : 'var(--ok-dark)'}">${_money(tot.remaining)}</td>
+      <td></td></tr></tfoot></table>`;
+
+    tableEl.innerHTML = html;
+    if (summaryEl) summaryEl.textContent = `${_money(tot.encumbered)} encumbered · ${_money(tot.spent)} spent`;
+  } catch (err) {
+    console.error('Encumbrance report failed:', err);
+    tableEl.innerHTML = `<div style="padding:30px;text-align:center;color:var(--no-dark);font-weight:700">Could not load: ${esc(err.message || err)}</div>`;
+  }
+}
+
+function downloadEncumbranceReport() {
+  if (!_encRows.length) { showToast('Nothing to export.', 'error'); return; }
+  try {
+    const fy = (document.getElementById('encFy') || {}).value || '';
+    const aoa = [['Account #','Name','Budget','Pending','Encumbered','Spent','Remaining','% Used']];
+    _encRows.forEach(r => aoa.push([
+      r.gl, r.name, r.budget, r.pending, r.encumbered, r.spent, r.remaining,
+      r.pctUsed == null ? '' : Math.round(r.pctUsed) / 100
+    ]));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:14},{wch:32},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:10}];
+    for (let i = 2; i <= aoa.length; i++) {
+      ['C','D','E','F','G'].forEach(col => {
+        const c = ws[col + i];
+        if (c && typeof c.v === 'number') c.z = '$#,##0.00';
+      });
+      const p = ws['H' + i];
+      if (p && typeof p.v === 'number') p.z = '0%';
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Encumbrances FY' + fy);
+    XLSX.writeFile(wb, `apollo-encumbrances-FY${fy}.xlsx`);
+    showToast('Excel file downloaded.', 'success');
+  } catch (err) {
+    console.error('Export failed:', err);
+    showToast('Export failed: ' + (err.message || err), 'error');
+  }
+}
+
+function _money(n) {
+  const v = Number(n || 0);
+  const s = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? '-$' : '$') + s;
+}
+
+// Total for a doc, tolerant of both line-item and legacy single-amount shapes
+function _docAmount(d, kind) {
+  if (Array.isArray(d.lineItems) && d.lineItems.length) {
+    return d.lineItems.reduce((s, li) => s + (Number(li.total) || 0), 0);
+  }
+  const raw = kind === 'po' ? d.totalPrice : d.amount;
+  return typeof raw === 'number' ? raw : (parseFloat(raw) || 0);
+}
+
+// First GL code found on a doc (used when a PO has line items but no header code)
+function _primaryGl(d) {
+  if (Array.isArray(d.lineItems)) {
+    const hit = d.lineItems.find(li => li && li.glcode);
+    if (hit) return hit.glcode;
+  }
+  return '';
 }
 
 // Enter key support
@@ -3313,6 +4757,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reg-pw2').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') doRegister();
   });
+
+  resetLineItems();
 
   // Wire drag-and-drop for the attachment dropzones
   _setupDropzone('po');
