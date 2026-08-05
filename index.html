@@ -412,6 +412,23 @@
             </div>
             <div id="bulkImportResult" style="margin-top:16px;display:none"></div>
 
+          <!-- ── Departments ── -->
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Departments</h3>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
+              Each department has a head who approves spending against its accounts. Assign accounts to a
+              department below, and assign staff to departments in the user list above.
+            </p>
+            <div style="background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px" id="departmentsList">
+              <div style="padding:16px;text-align:center;color:var(--muted)">Loading departments…</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Department Name</label><input type="text" id="newDeptName" placeholder="e.g. Art"></div>
+              <div class="form-group"><label>Department Head</label><select id="newDeptHead"><option value="">— select approver —</option></select></div>
+            </div>
+            <button class="btn-primary" onclick="addDepartment()">Add Department</button>
+          </div>
+
           <!-- ── Chart of Accounts ── -->
           <div class="settings-section">
             <h3 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Chart of Accounts</h3>
@@ -422,8 +439,13 @@
               <div style="padding:16px;text-align:center;color:var(--muted)">Loading accounts…</div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>Account #</label><input type="text" id="newAccountCode" placeholder="e.g. 5100-200"></div>
-              <div class="form-group"><label>Account Name</label><input type="text" id="newAccountName" placeholder="e.g. Athletics — Supplies"></div>
+              <div class="form-group"><label>Account #</label><input type="text" id="newAccountCode" placeholder="e.g. 01-5900-05"></div>
+              <div class="form-group"><label>Account Name</label><input type="text" id="newAccountName" placeholder="e.g. General Admissions"></div>
+            </div>
+            <div class="form-group" style="max-width:300px">
+              <label>Department</label>
+              <select id="newAccountDept"><option value="">— unassigned —</option></select>
+              <div class="form-hint">Determines who approves purchases against this account.</div>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
               <button class="btn-secondary" onclick="showBulkAccountsModal()">Bulk Paste</button>
@@ -1545,6 +1567,7 @@ async function loadSchoolData() {
     
     if (memberDoc.exists) {
       userRole = String(memberDoc.data().role || 'user').trim().toLowerCase();
+      userDepartments = Array.isArray(memberDoc.data().departments) ? memberDoc.data().departments : [];
       // Auto-activate pending members on first login so they don't stay in limbo
       const memberData = memberDoc.data();
       if (String(memberData.status || '').toLowerCase() === 'pending') {
@@ -1557,6 +1580,7 @@ async function loadSchoolData() {
       }
     } else {
       userRole = 'user'; // Default role
+      userDepartments = [];
     }
     
     // Update role display
@@ -1599,6 +1623,11 @@ async function loadSchoolUsers() {
 
         // Right-hand controls: read-only badge for non-admins, dropdown+remove for admins
         let controls;
+        const deptList = Array.isArray(member.departments) ? member.departments : [];
+        const deptLabel = deptList.length
+          ? deptList.map(d => esc(d)).join(', ')
+          : '<span style="color:var(--muted)">no departments</span>';
+
         if (canEdit && !isSelf) {
           const safeId = memberEmail.replace(/[^a-zA-Z0-9]/g, '_');
           controls = `
@@ -1609,6 +1638,9 @@ async function loadSchoolUsers() {
                 <option value="approver"${memberRole==='approver'?' selected':''}>Approver</option>
                 <option value="admin"${memberRole==='admin'?' selected':''}>Admin</option>
               </select>
+              <button onclick="showUserDepartmentsModal('${esc(memberEmail)}')"
+                style="border:1.5px solid var(--line);background:white;color:var(--brand-dark);padding:6px 10px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap"
+                title="Set departments">Depts</button>
               <button onclick="removeUserFromSchool('${esc(memberEmail)}')"
                 style="border:1.5px solid var(--line);background:white;color:var(--no-dark);padding:6px 10px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer"
                 title="Remove user">✕</button>
@@ -1622,7 +1654,7 @@ async function loadSchoolUsers() {
           <div style="padding:14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px">
             <div style="min-width:0;flex:1">
               <div style="font-weight:700;color:var(--text);word-break:break-all">${esc(memberEmail)}${statusLabel}</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${esc(member.name || 'No name')}</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${esc(member.name || 'No name')} · ${deptLabel}</div>
             </div>
             ${controls}
           </div>
@@ -2138,6 +2170,7 @@ function switchTab(tabName) {
   }
 
   if (tabName === 'settings') {
+    renderDepartmentsList();
     renderAccountsList();
     loadBudgetEditor();
     loadTiersEditor();
@@ -2476,7 +2509,7 @@ async function loadPendingApprovals() {
       if (!isPending(data.status)) return;
       const price = typeof data.totalPrice === 'number' ? data.totalPrice : parseFloat(data.totalPrice) || 0;
       rows.push({
-        kind: 'po', docId: doc.id,
+        kind: 'po', docId: doc.id, needsGl: data.needsGlAssignment === true,
         type: '📋 PO', id: data.poNumber || doc.id,
         requestedBy: data.requestorEmail || data.createdByEmail || '—',
         details: `${data.vendor || 'Unknown vendor'} — $${price.toFixed(2)}`,
@@ -2516,7 +2549,7 @@ async function loadPendingApprovals() {
         <td style="padding:12px;color:var(--text)">${esc(row.type)}</td>
         <td style="padding:12px;font-weight:700;color:var(--brand-dark)">${esc(row.id)}</td>
         <td style="padding:12px;font-size:13px;color:var(--text)">${esc(row.requestedBy)}</td>
-        <td style="padding:12px;color:var(--text)">${esc(row.details)}</td>
+        <td style="padding:12px;color:var(--text)">${esc(row.details)}${row.needsGl ? '<br><span style="font-size:11px;font-weight:700;color:var(--brand-dark)">needs account code</span>' : ''}</td>
         <td style="padding:12px;font-size:12px;color:var(--text-secondary)">${_fmtDate(row.createdAt)}<br>${_fmtTime(row.createdAt)}</td>
         <td style="padding:12px;text-align:right">
           <span style="display:inline-block;padding:6px 12px;background:var(--brand);color:#1a0500;border-radius:8px;font-weight:700;font-size:12px">Review →</span>
@@ -2620,6 +2653,9 @@ async function renderDetail(detail) {
 
   const amt = _docAmount(data, kind);
   const lineItems = Array.isArray(data.lineItems) ? data.lineItems : [];
+  // Some lines may have been submitted as "Approver selects code"
+  const needsGl = data.needsGlAssignment === true
+    || lineItems.some(li => li && (li.deferred === true || !li.glcode));
 
   const requestedByEmail = isPO
     ? (data.requestorEmail || '')
@@ -2668,7 +2704,7 @@ async function renderDetail(detail) {
         <td style="padding:9px 10px;color:var(--text)">${esc(li.description || '—')}</td>
         <td style="padding:9px 10px;text-align:right;color:var(--text-secondary);white-space:nowrap">${esc(li.qty)}</td>
         <td style="padding:9px 10px;text-align:right;color:var(--text-secondary);white-space:nowrap">${_money(li.unitPrice)}</td>
-        <td style="padding:9px 10px;color:var(--text-secondary);white-space:nowrap">${esc(li.glcode || '—')}</td>
+        <td style="padding:9px 10px;color:var(--text-secondary);white-space:nowrap">${li.glcode ? esc(li.glcode) : '<span style="color:var(--brand-dark);font-weight:700;font-size:11px">awaiting code</span>'}</td>
         <td style="padding:9px 10px;text-align:right;font-weight:700;color:var(--text);white-space:nowrap">${_money(li.total)}</td>
       </tr>`).join('');
     const th = (l, a) => `<th style="padding:9px 10px;text-align:${a || 'left'};font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-secondary)">${l}</th>`;
@@ -2741,9 +2777,49 @@ async function renderDetail(detail) {
   );
   const canAct = iAmApprover && _statusKey(status) === STATUS_PENDING;
 
+  // When the submitter deferred the account code, the approver assigns it here.
+  let glAssignHtml = '';
+  if (canAct && needsGl) {
+    const options = await _accountsForUser();
+    const optHtml = (sel) => ['<option value="">— select account —</option>'].concat(
+      options.map(a => `<option value="${esc(a.code)}"${a.code === sel ? ' selected' : ''}>${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`)
+    ).join('');
+
+    let fieldsHtml = '';
+    if (lineItems.length) {
+      fieldsHtml = lineItems.map((li, i) => {
+        if (li.glcode) return '';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-light)">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:var(--text);font-size:13px">${esc(li.description || 'Line ' + (i + 1))}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${esc(li.qty)} &times; ${_money(li.unitPrice)} = <strong>${_money(li.total)}</strong></div>
+          </div>
+          <div style="width:280px">
+            <select id="assign-gl-${i}" data-assign-index="${i}"
+              style="width:100%;padding:9px 10px;border:1.5px solid var(--brand);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px">${optHtml('')}</select>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      fieldsHtml = `<div style="padding:10px 0">
+        <select id="assign-gl-single"
+          style="width:100%;padding:9px 10px;border:1.5px solid var(--brand);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px">${optHtml('')}</select>
+      </div>`;
+    }
+
+    glAssignHtml = `
+      <div style="margin-top:28px;padding:18px;background:var(--brand-light);border:1.5px solid var(--brand);border-radius:var(--radius-sm)">
+        <h3 style="font-size:15px;font-weight:800;color:var(--brand-dark);margin-bottom:4px">Account code needed</h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5">
+          The requester left the account code for you to assign. Set it before approving.
+        </p>
+        ${fieldsHtml}
+      </div>`;
+  }
+
   let actions = '';
   if (canAct) {
-    actions = `
+    actions = glAssignHtml + `
       <div style="margin-top:28px;padding-top:24px;border-top:2px solid var(--line)">
         <h3 style="font-size:16px;font-weight:700;margin-bottom:6px">Make a Decision</h3>
         <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
@@ -2784,7 +2860,7 @@ async function renderDetail(detail) {
   } else if (_statusKey(status) !== STATUS_PENDING) {
     actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">This request is <strong style="color:${st.color}">${esc(_statusLabel(status))}</strong>.${data.paidReference ? ' Reference: <strong>' + esc(data.paidReference) + '</strong>.' : ''}${data.voidReason ? ' Reason: ' + esc(data.voidReason) : ''}</div>`;
   } else if (currentUser && data.approver) {
-    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(approverName)}</strong>.</div>`;
+    actions = `<div style="margin-top:24px;padding:14px;background:var(--line-light);border-radius:var(--radius-sm);text-align:center;font-size:13px;color:var(--text-secondary)">Waiting on decision from <strong>${esc(approverName)}</strong>.${needsGl ? ' They will assign the account code.' : ''}</div>`;
   }
 
   card.innerHTML = `
@@ -2919,15 +2995,56 @@ async function submitDecision(newStatus) {
   if (btnA) { btnA.disabled = true; btnA.style.opacity = '.55'; btnA.style.cursor = 'not-allowed'; }
   if (btnD) { btnD.disabled = true; btnD.style.opacity = '.55'; btnD.style.cursor = 'not-allowed'; }
 
+  // Approving a request whose code was deferred requires assigning it now.
+  const patch = {};
+  if (_statusKey(newStatus) === STATUS_APPROVED) {
+    const d = _currentDetail.data || {};
+    const items = Array.isArray(d.lineItems) ? d.lineItems.slice() : [];
+    const needsGl = d.needsGlAssignment === true || items.some(li => li && !li.glcode);
+
+    if (needsGl) {
+      if (items.length) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].glcode) continue;
+          const sel = document.getElementById('assign-gl-' + i);
+          const code = sel ? sel.value : '';
+          if (!code) {
+            showToast('Assign an account code to every line before approving.', 'error');
+            if (sel) sel.focus();
+            return;
+          }
+          items[i] = Object.assign({}, items[i], { glcode: code, deferred: false });
+        }
+        patch.lineItems = items;
+        patch.glcode = items[0].glcode;
+      } else {
+        const sel = document.getElementById('assign-gl-single');
+        const code = sel ? sel.value : '';
+        if (!code) {
+          showToast('Assign an account code before approving.', 'error');
+          if (sel) sel.focus();
+          return;
+        }
+        patch.glcode = code;
+      }
+      patch.needsGlAssignment = false;
+      patch.glAssignedBy = currentUser.email;
+    }
+  }
+
   try {
     const statusKey = _statusKey(newStatus);
-    await _currentDetail.docRef.update({
+    await _currentDetail.docRef.update(Object.assign(patch, {
       status: statusKey,
       decisionNote: note || null,
       decidedBy: currentUser.email,
       decidedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    }));
+    if (patch.glcode) {
+      await logEvent(_currentDetail.kind, _currentDetail.docId, 'code assigned',
+        'Account code set by approver: ' + patch.glcode, { glcode: patch.glcode });
+    }
     await logEvent(_currentDetail.kind, _currentDetail.docId, statusKey, note || null, {
       amount: _docAmount(_currentDetail.data, _currentDetail.kind)
     });
@@ -3372,6 +3489,7 @@ let _approvalConfigCache = null;
 const _budgetCache = {};
 
 function _clearRegistryCaches() {
+  _departmentsCache = null;
   _approversCache = null;
   _accountsCache = null;
   _vendorsCache = null;
@@ -3387,7 +3505,7 @@ async function loadAccounts(force) {
     snap.forEach(d => {
       const a = d.data() || {};
       if (a.active === false) return;
-      list.push({ code: a.code || d.id, name: a.name || '' });
+      list.push({ code: a.code || d.id, name: a.name || '', department: a.department || '' });
     });
     list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
     _accountsCache = list;
@@ -3483,6 +3601,299 @@ async function loadBudgets(fy, force) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// DEPARTMENTS
+// Each department has a head who approves spending on its accounts.
+// ═══════════════════════════════════════════════════════════════
+const DEFER_GL = '__DEFER__';   // sentinel: "let the approver pick the code"
+let _departmentsCache = null;
+let userDepartments = [];       // department names the signed-in user may spend from
+
+async function loadDepartments(force) {
+  if (_departmentsCache && !force) return _departmentsCache;
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId).collection('departments').get();
+    const list = [];
+    snap.forEach(d => {
+      const x = d.data() || {};
+      list.push({ id: d.id, name: x.name || d.id, headEmail: x.headEmail || '' });
+    });
+    list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    _departmentsCache = list;
+  } catch (e) {
+    console.warn('Could not load departments:', e);
+    _departmentsCache = [];
+  }
+  return _departmentsCache;
+}
+
+function _deptId(name) {
+  return String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100);
+}
+
+async function renderDepartmentsList() {
+  const el = document.getElementById('departmentsList');
+  const headSel = document.getElementById('newDeptHead');
+  if (!el) return;
+
+  const [depts, approvers] = await Promise.all([loadDepartments(true), _eligibleApprovers()]);
+
+  if (headSel) {
+    headSel.innerHTML = '<option value="">— select approver —</option>' +
+      approvers.map(a => `<option value="${esc(a.email)}">${esc(a.name)}</option>`).join('');
+  }
+
+  // Keep the account form's department picker in sync
+  const accDept = document.getElementById('newAccountDept');
+  if (accDept) {
+    const keep = accDept.value;
+    accDept.innerHTML = '<option value="">— unassigned —</option>' +
+      depts.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+    if (keep) accDept.value = keep;
+  }
+
+  if (!depts.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">No departments yet — add one below.</div>';
+    return;
+  }
+
+  el.innerHTML = depts.map(d => {
+    const opts = ['<option value="">— no head assigned —</option>'].concat(
+      approvers.map(a => `<option value="${esc(a.email)}"${a.email.toLowerCase() === String(d.headEmail).toLowerCase() ? ' selected' : ''}>${esc(a.name)}</option>`)
+    ).join('');
+    const orphaned = d.headEmail && !approvers.some(a => a.email.toLowerCase() === String(d.headEmail).toLowerCase());
+    return `<div class="chip-row">
+      <div style="font-weight:700;color:var(--text);min-width:140px">${esc(d.name)}</div>
+      <div style="flex:1;min-width:0">
+        <select onchange="setDepartmentHead('${esc(d.id)}',this.value)"
+          style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:'Outfit',sans-serif;font-size:13px">${opts}</select>
+        ${orphaned ? `<div style="font-size:11px;color:var(--no-dark);font-weight:700;margin-top:4px">${esc(d.headEmail)} is no longer an active approver — pick someone else.</div>` : ''}
+      </div>
+      <button onclick="removeDepartment('${esc(d.id)}','${esc(d.name)}')" class="li-del" title="Remove department">&#10005;</button>
+    </div>`;
+  }).join('');
+}
+
+async function addDepartment() {
+  const name = (document.getElementById('newDeptName').value || '').trim();
+  const head = (document.getElementById('newDeptHead').value || '').trim().toLowerCase();
+  if (!name) { showToast('Enter a department name', 'error'); return; }
+  const id = _deptId(name);
+  if (!id) { showToast('That name has no usable characters', 'error'); return; }
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('departments').doc(id).set({
+      name: name, headEmail: head || '',
+      addedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    document.getElementById('newDeptName').value = '';
+    document.getElementById('newDeptHead').value = '';
+    _departmentsCache = null;
+    await renderDepartmentsList();
+    showToast('Department added.', 'success');
+  } catch (e) {
+    showToast('Could not add department: ' + (e.message || e), 'error');
+  }
+}
+
+async function setDepartmentHead(deptId, email) {
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('departments').doc(deptId)
+      .set({ headEmail: (email || '').toLowerCase() }, { merge: true });
+    _departmentsCache = null;
+    showToast(email ? 'Department head updated.' : 'Department head cleared.', 'success');
+    await renderDepartmentsList();
+  } catch (e) {
+    showToast('Could not update: ' + (e.message || e), 'error');
+  }
+}
+
+async function removeDepartment(deptId, name) {
+  if (!confirm(`Remove the ${name} department?\n\nAccounts keep the label but will stop routing to a head until you reassign them.`)) return;
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('departments').doc(deptId).delete();
+    _departmentsCache = null;
+    await renderDepartmentsList();
+    await renderAccountsList();
+    showToast('Department removed.', 'success');
+  } catch (e) {
+    showToast('Could not remove: ' + (e.message || e), 'error');
+  }
+}
+
+// ───────────────── Per-user department access ─────────────────
+async function showUserDepartmentsModal(email) {
+  const depts = await loadDepartments();
+  if (!depts.length) {
+    showToast('Add departments first.', 'error');
+    return;
+  }
+  let current = [];
+  try {
+    const snap = await db.collection('schools').doc(currentSchoolId)
+      .collection('members').doc(email).get();
+    current = (snap.exists && Array.isArray(snap.data().departments)) ? snap.data().departments : [];
+  } catch (e) { /* treat as none */ }
+
+  const lower = current.map(s => String(s).toLowerCase());
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-header">
+      <span style="font-size:18px">Departments</span>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5">
+      <strong>${esc(email)}</strong> will only see accounts belonging to the departments checked here,
+      plus any account with no department. Admins always see every account.
+    </p>
+    <div style="border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;max-height:320px;overflow-y:auto">
+      ${depts.map(d => `
+        <label class="chip-row" style="cursor:pointer">
+          <input type="checkbox" class="user-dept-cb" value="${esc(d.name)}"
+            ${lower.includes(d.name.toLowerCase()) ? 'checked' : ''}
+            style="width:18px;height:18px;accent-color:var(--brand);cursor:pointer">
+          <span style="flex:1;font-weight:600;color:var(--text)">${esc(d.name)}</span>
+          <span style="font-size:12px;color:var(--text-secondary)">${esc(d.headEmail || 'no head')}</span>
+        </label>`).join('')}
+    </div>
+    <button class="btn-primary" onclick="saveUserDepartments('${esc(email)}')">Save Departments</button>`;
+  document.getElementById('modalBackdrop').classList.add('active');
+}
+
+async function saveUserDepartments(email) {
+  const picked = Array.from(document.querySelectorAll('.user-dept-cb'))
+    .filter(cb => cb.checked).map(cb => cb.value);
+  try {
+    await db.collection('schools').doc(currentSchoolId).collection('members').doc(email)
+      .set({ departments: picked }, { merge: true });
+    closeModal();
+    if (currentUser && String(currentUser.email).toLowerCase() === String(email).toLowerCase()) {
+      userDepartments = picked;
+      _accountsCache = null;
+    }
+    await loadSchoolUsers();
+    showToast(picked.length ? `Saved ${picked.length} department${picked.length === 1 ? '' : 's'}.` : 'Departments cleared.', 'success');
+  } catch (e) {
+    showToast('Could not save: ' + (e.message || e), 'error');
+  }
+}
+
+// Accounts this user is allowed to charge. Admins see everything; everyone can
+// use accounts that have no department assigned.
+async function _accountsForUser() {
+  const all = await loadAccounts();
+  if (userRole === 'admin') return all;
+  const mine = (userDepartments || []).map(s => String(s).toLowerCase());
+  return all.filter(a => !a.department || mine.includes(String(a.department).toLowerCase()));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROUTING — who must approve, based on the accounts selected
+// ═══════════════════════════════════════════════════════════════
+// Returns { mode, approverEmail, candidates, message, blocked }
+//   dept     → one department head owns every line; approver is locked
+//   multi    → lines span departments; submitter picks among those heads
+//   deferred → at least one code is left for the approver to assign
+//   tier     → no department owns the spend, so amount tiers apply
+//   free     → no routing rules apply; any approver may be chosen
+async function _resolveRouting(items, total) {
+  const [accounts, depts, cfg] = await Promise.all([
+    loadAccounts(), loadDepartments(), loadApprovalConfig()
+  ]);
+  const byCode = {};
+  accounts.forEach(a => { byCode[a.code] = a; });
+  const deptByName = {};
+  depts.forEach(d => { deptByName[String(d.name).toLowerCase()] = d; });
+
+  const priced = items.filter(li => li && (li.glcode || li.deferred));
+  const anyDeferred = priced.some(li => li.deferred || li.glcode === DEFER_GL);
+
+  if (anyDeferred) {
+    return {
+      mode: 'deferred', approverEmail: null, candidates: null,
+      message: 'One or more lines are marked <strong>Approver selects code</strong> — choose who should assign it.'
+    };
+  }
+
+  // Group spend by department head
+  const shares = {};
+  let unassigned = 0;
+  priced.forEach(li => {
+    const acc = byCode[li.glcode];
+    const dept = acc && acc.department ? deptByName[String(acc.department).toLowerCase()] : null;
+    if (dept && dept.headEmail) {
+      const key = dept.headEmail.toLowerCase();
+      if (!shares[key]) shares[key] = { email: dept.headEmail, total: 0, depts: [], codes: [] };
+      shares[key].total += Number(li.total) || 0;
+      if (!shares[key].depts.includes(dept.name)) shares[key].depts.push(dept.name);
+      const codeLabel = acc.name ? `${acc.code} · ${acc.name}` : acc.code;
+      if (!shares[key].codes.includes(codeLabel)) shares[key].codes.push(codeLabel);
+    } else {
+      unassigned += Number(li.total) || 0;
+    }
+  });
+
+  const heads = Object.values(shares).sort((a, b) => b.total - a.total);
+  const approvers = await _eligibleApprovers();
+  const nameOf = (email) => {
+    const hit = approvers.find(a => a.email.toLowerCase() === String(email).toLowerCase());
+    return hit ? hit.name : email;
+  };
+
+  // Every line owned by one department head
+  if (heads.length === 1 && unassigned === 0) {
+    const h = heads[0];
+    const active = approvers.some(a => a.email.toLowerCase() === h.email.toLowerCase());
+    if (!active) {
+      return {
+        mode: 'dept', approverEmail: null, candidates: null, blocked: true,
+        message: `<span style="color:var(--no-dark);font-weight:700">${esc(h.depts.join(', '))} is headed by ${esc(h.email)}, who isn't an active approver. Ask an admin to update Departments.</span>`
+      };
+    }
+    return {
+      mode: 'dept', approverEmail: h.email, candidates: null,
+      message: `${esc(h.codes.join('<br>'))} must be approved by <strong>${esc(nameOf(h.email))}</strong>`
+    };
+  }
+
+  // Lines span multiple departments — let the submitter pick among those heads
+  if (heads.length > 1) {
+    const usable = heads.filter(h => approvers.some(a => a.email.toLowerCase() === h.email.toLowerCase()));
+    if (!usable.length) {
+      return {
+        mode: 'multi', approverEmail: null, candidates: null, blocked: true,
+        message: '<span style="color:var(--no-dark);font-weight:700">None of the departments on this order have an active head. Ask an admin to update Departments.</span>'
+      };
+    }
+    const parts = usable.map(h => `${esc(h.depts.join('/'))} (${_money(h.total)}) — ${esc(nameOf(h.email))}`);
+    return {
+      mode: 'multi',
+      approverEmail: usable[0].email,
+      candidates: usable.map(h => h.email),
+      message: `This order spans departments: ${parts.join(' · ')}.<br>` +
+               `Defaulting to the largest share. Split the order if each department must sign off separately.` +
+               (unassigned > 0 ? `<br><span style="color:var(--text-secondary)">${_money(unassigned)} sits on accounts with no department.</span>` : '')
+    };
+  }
+
+  // Nothing is department-owned → fall back to amount tiers
+  const tier = _tierForAmount(cfg, total);
+  if (tier) {
+    const active = approvers.some(a => a.email.toLowerCase() === String(tier.approverEmail).toLowerCase());
+    const cap = tier.upTo == null ? 'any amount' : 'up to ' + _money(tier.upTo);
+    if (!active) {
+      return {
+        mode: 'tier', approverEmail: null, candidates: null, blocked: true,
+        message: `<span style="color:var(--no-dark);font-weight:700">The tier for ${cap} points at ${esc(tier.approverEmail)}, who isn't an active approver.</span>`
+      };
+    }
+    return {
+      mode: 'tier', approverEmail: tier.approverEmail, candidates: null,
+      message: `Totals ${cap} route to <strong>${esc(nameOf(tier.approverEmail))}</strong> under this school's approval tiers.`
+    };
+  }
+
+  return { mode: 'free', approverEmail: null, candidates: null, message: '' };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SETTINGS — accounts
 // ═══════════════════════════════════════════════════════════════
 async function renderAccountsList() {
@@ -3493,21 +3904,32 @@ async function renderAccountsList() {
     el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">No accounts yet — add one below or bulk paste.</div>';
     return;
   }
-  el.innerHTML = list.map(a => `
-    <div class="chip-row">
+  const depts = await loadDepartments();
+  const headByDept = {};
+  depts.forEach(d => { headByDept[String(d.name).toLowerCase()] = d.headEmail; });
+
+  el.innerHTML = list.map(a => {
+    const hasHead = a.department && headByDept[String(a.department).toLowerCase()];
+    const badge = a.department
+      ? `<span style="background:${hasHead ? 'var(--brand-light)' : 'var(--no-light)'};color:${hasHead ? 'var(--brand-dark)' : 'var(--no-dark)'};padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap">${esc(a.department)}${hasHead ? '' : ' · no head'}</span>`
+      : `<span style="color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap">unassigned</span>`;
+    return `<div class="chip-row">
       <div style="font-weight:700;color:var(--brand-dark);min-width:110px;white-space:nowrap">${esc(a.code)}</div>
       <div style="flex:1;color:var(--text);min-width:0">${esc(a.name || '—')}</div>
+      ${badge}
       <button onclick="removeAccount('${esc(a.code)}')" class="li-del" title="Remove account">&#10005;</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function addAccount() {
   const code = (document.getElementById('newAccountCode').value || '').trim();
   const name = (document.getElementById('newAccountName').value || '').trim();
+  const dept = (document.getElementById('newAccountDept').value || '').trim();
   if (!code) { showToast('Enter an account number', 'error'); return; }
   try {
     await db.collection('schools').doc(currentSchoolId).collection('accounts')
-      .doc(_safeDocId(code)).set({ code: code, name: name, active: true,
+      .doc(_safeDocId(code)).set({ code: code, name: name, department: dept, active: true,
         addedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     document.getElementById('newAccountCode').value = '';
     document.getElementById('newAccountName').value = '';
@@ -3546,10 +3968,12 @@ function showBulkAccountsModal() {
       <button class="modal-close" onclick="closeModal()">&times;</button>
     </div>
     <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">
-      One per line as <code style="background:var(--line-light);padding:2px 6px;border-radius:4px">code, name</code>.
+      One per line as <code style="background:var(--line-light);padding:2px 6px;border-radius:4px">code, name, department</code>.
+      Department is optional. Any department that doesn't exist yet is created automatically —
+      assign its head afterwards under Departments.
     </p>
     <div class="form-group">
-      <textarea id="bulkAccountsCsv" rows="10" style="font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="5100-200, Athletics — Supplies&#10;5200-100, Library — Books"></textarea>
+      <textarea id="bulkAccountsCsv" rows="10" style="font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="5900-05, General Admissions, Art&#10;5100-200, Athletics — Supplies, Athletics&#10;5200-100, Library — Books"></textarea>
     </div>
     <button class="btn-primary" onclick="runBulkAccounts()">Import Accounts</button>`;
   document.getElementById('modalBackdrop').classList.add('active');
@@ -3562,10 +3986,18 @@ async function runBulkAccounts() {
     const t = line.trim();
     if (!t) return;
     if (/^code\s*,/i.test(t)) return;
-    const sep = t.search(/[,\t]/);
-    const code = (sep < 0 ? t : t.slice(0, sep)).trim();
-    const name = sep < 0 ? '' : t.slice(sep + 1).trim().replace(/^["']|["']$/g, '');
-    if (code) rows.push({ code, name });
+    // Split into at most three fields: code, name, department.
+    const parts = t.split(/\s*[,\t]\s*/);
+    const code = (parts.shift() || '').trim();
+    let dept = '';
+    let name = '';
+    if (parts.length >= 2) {
+      dept = (parts.pop() || '').trim().replace(/^["']|["']$/g, '');
+      name = parts.join(', ').trim().replace(/^["']|["']$/g, '');
+    } else {
+      name = (parts[0] || '').trim().replace(/^["']|["']$/g, '');
+    }
+    if (code) rows.push({ code, name, dept });
   });
   if (!rows.length) { showToast('Nothing to import', 'error'); return; }
 
@@ -3575,17 +4007,42 @@ async function runBulkAccounts() {
       const batch = db.batch();
       rows.slice(i, i + 450).forEach(r => {
         batch.set(col.doc(_safeDocId(r.code)), {
-          code: r.code, name: r.name, active: true,
+          code: r.code, name: r.name, department: r.dept || '', active: true,
           addedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
       });
       await batch.commit();
     }
+
+    // Create any department named in the import that doesn't exist yet, so the
+    // admin only has to fill in the head.
+    const existing = (await loadDepartments(true)).map(d => String(d.name).toLowerCase());
+    const fresh = [];
+    rows.forEach(r => {
+      const n = (r.dept || '').trim();
+      if (n && !existing.includes(n.toLowerCase()) && !fresh.some(f => f.toLowerCase() === n.toLowerCase())) {
+        fresh.push(n);
+      }
+    });
+    if (fresh.length) {
+      const dcol = db.collection('schools').doc(currentSchoolId).collection('departments');
+      const batch = db.batch();
+      fresh.forEach(n => batch.set(dcol.doc(_deptId(n)), {
+        name: n, headEmail: '',
+        addedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true }));
+      await batch.commit();
+      _departmentsCache = null;
+    }
+
     closeModal();
     _accountsCache = null;
     await renderAccountsList();
+    await renderDepartmentsList();
     await loadBudgetEditor();
-    showToast(`Imported ${rows.length} account${rows.length === 1 ? '' : 's'}.`, 'success');
+    showToast(fresh.length
+      ? `Imported ${rows.length} accounts and created ${fresh.length} department${fresh.length === 1 ? '' : 's'} — assign heads under Departments.`
+      : `Imported ${rows.length} account${rows.length === 1 ? '' : 's'}.`, 'success');
   } catch (e) {
     showToast('Import failed: ' + (e.message || e), 'error');
   }
@@ -3966,6 +4423,15 @@ function updateLineItem(uid, field, value) {
   _repaintLineTotals();
 }
 
+// Snapshot of the line items in the shape the routing resolver expects
+function _routingItems() {
+  return _lineItems.map(li => ({
+    glcode: li.glcode === DEFER_GL ? '' : String(li.glcode || ''),
+    deferred: li.glcode === DEFER_GL,
+    total: _lineTotal(li)
+  })).filter(li => li.glcode || li.deferred);
+}
+
 function _lineTotal(li) {
   const q = parseFloat(li.qty);
   const p = parseFloat(li.unitPrice);
@@ -3990,13 +4456,15 @@ function _repaintLineTotals() {
 async function renderLineItems() {
   const tbody = document.getElementById('po-lineitems');
   if (!tbody) return;
-  const accounts = await loadAccounts();
+  const accounts = await _accountsForUser();
 
   const accountOptions = (selected) => {
     if (!accounts.length) return null; // fall back to free text
     return ['<option value="">— select —</option>'].concat(
       accounts.map(a => `<option value="${esc(a.code)}"${a.code === selected ? ' selected' : ''}>${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`)
-    ).join('');
+    ).concat([
+      `<option value="${DEFER_GL}"${selected === DEFER_GL ? ' selected' : ''}>Approver selects code</option>`
+    ]).join('');
   };
 
   tbody.innerHTML = _lineItems.map(li => {
@@ -4017,37 +4485,63 @@ async function renderLineItems() {
   _repaintLineTotals();
 }
 
-// Narrow the approver dropdown to whoever the tier config allows for this total.
+// Narrow the approver dropdown according to the accounts chosen on the lines.
+let _routing = { mode: 'free', approverEmail: null, candidates: null, message: '' };
+
 async function _refreshApproverForAmount() {
-  const cfg = await loadApprovalConfig();
   const hint = document.getElementById('po-approver-hint');
   const select = document.getElementById('po-approver');
   if (!select) return;
 
-  const amount = _grandTotal();
-  const tier = _tierForAmount(cfg, amount);
+  const total = _grandTotal();
+  const items = _routingItems();
+  _routing = await _resolveRouting(items, total);
 
-  if (!tier) {
-    if (hint) hint.textContent = '';
-    if (select.getAttribute('data-tier-locked') === '1') {
-      select.removeAttribute('data-tier-locked');
-      await loadApproversForPO();
-    }
-    return;
-  }
+  if (hint) hint.innerHTML = _routing.message || '';
 
   const approvers = await _eligibleApprovers();
-  const match = approvers.find(a => a.email.toLowerCase() === String(tier.approverEmail).toLowerCase());
-  const cap = tier.upTo == null ? 'any amount' : 'up to ' + _money(tier.upTo);
+  const optionFor = (email) => {
+    const hit = approvers.find(a => a.email.toLowerCase() === String(email).toLowerCase());
+    const label = hit ? `${hit.name} (${hit.email})` : email;
+    return `<option value="${esc(email)}">${esc(label)}</option>`;
+  };
 
-  if (!match) {
-    if (hint) hint.innerHTML = `<span style="color:var(--no-dark);font-weight:700">Tier for ${cap} points at ${esc(tier.approverEmail)}, who isn't an active approver. Ask an admin to fix Approval Tiers.</span>`;
+  if (_routing.blocked) {
+    select.innerHTML = '<option value="" disabled selected>Routing needs an admin fix</option>';
+    select.setAttribute('data-locked', '1');
     return;
   }
 
-  select.setAttribute('data-tier-locked', '1');
-  select.innerHTML = `<option value="${esc(match.email)}" selected>${esc(match.name)}</option>`;
-  if (hint) hint.innerHTML = `Totals ${cap} route to <strong>${esc(match.name)}</strong> under this school's approval tiers.`;
+  // One department head owns the whole order — lock it in
+  if (_routing.mode === 'dept' && _routing.approverEmail) {
+    select.innerHTML = optionFor(_routing.approverEmail).replace('<option', '<option selected');
+    select.setAttribute('data-locked', '1');
+    return;
+  }
+
+  // Several departments involved — limit the choice to those heads
+  if (_routing.mode === 'multi' && _routing.candidates) {
+    select.innerHTML = _routing.candidates.map((e, i) =>
+      optionFor(e).replace('<option', i === 0 ? '<option selected' : '<option')).join('');
+    select.setAttribute('data-locked', '1');
+    return;
+  }
+
+  // Amount tiers apply
+  if (_routing.mode === 'tier' && _routing.approverEmail) {
+    select.innerHTML = optionFor(_routing.approverEmail).replace('<option', '<option selected');
+    select.setAttribute('data-locked', '1');
+    return;
+  }
+
+  // Deferred or unrouted — any active approver may be picked
+  select.removeAttribute('data-locked');
+  const keep = select.value;
+  select.innerHTML = '<option value="" disabled' + (keep ? '' : ' selected') + '>Select an approver</option>' +
+    approvers.map(a => `<option value="${esc(a.email)}"${a.email === keep ? ' selected' : ''}>${esc(a.name)} (${esc(a.email)})</option>`).join('');
+  if (!approvers.length) {
+    select.innerHTML = '<option value="" disabled selected>No active approvers — ask an admin</option>';
+  }
 }
 
 async function submitPO() {
@@ -4068,11 +4562,13 @@ async function submitPO() {
     if (!desc) { showToast('Every line item needs a description', 'error'); return; }
     if (isNaN(q) || q <= 0) { showToast(`Quantity must be greater than zero (${desc})`, 'error'); return; }
     if (isNaN(p) || p < 0) { showToast(`Enter a unit price for "${desc}"`, 'error'); return; }
+    const deferred = li.glcode === DEFER_GL;
     items.push({
       description: desc,
       qty: q,
       unitPrice: Math.round(p * 100) / 100,
-      glcode: String(li.glcode || '').trim(),
+      glcode: deferred ? '' : String(li.glcode || '').trim(),
+      deferred: deferred,
       total: _lineTotal(li)
     });
   }
@@ -4080,18 +4576,32 @@ async function submitPO() {
   if (!items.length) { showToast('Add at least one line item', 'error'); return; }
   if (!vendor) { showToast('Enter a vendor', 'error'); return; }
   if (!approver) { showToast('Select an approver', 'error'); return; }
-  if (items.some(li => !li.glcode)) { showToast('Every line item needs an account number', 'error'); return; }
+  if (items.some(li => !li.glcode && !li.deferred)) {
+    showToast('Every line needs an account number, or mark it "Approver selects code"', 'error');
+    return;
+  }
 
   const totalPrice = Math.round(items.reduce((s, li) => s + li.total, 0) * 100) / 100;
   if (totalPrice <= 0) { showToast('Order total must be greater than zero', 'error'); return; }
 
-  // ── Enforce tier routing server-side of the UI, in case the select was tampered with ──
-  const cfg = await loadApprovalConfig();
-  const tier = _tierForAmount(cfg, totalPrice);
-  if (tier && String(tier.approverEmail).toLowerCase() !== String(approver).toLowerCase()) {
-    showToast('This amount must be approved by ' + tier.approverEmail, 'error');
+  // ── Re-resolve routing at submit time, in case the select was tampered with ──
+  const routing = await _resolveRouting(items, totalPrice);
+  if (routing.blocked) {
+    showToast('This order cannot be routed — ask an admin to fix Departments.', 'error');
     return;
   }
+  if (routing.mode === 'dept' || routing.mode === 'tier') {
+    if (String(routing.approverEmail).toLowerCase() !== String(approver).toLowerCase()) {
+      showToast('This order must be approved by ' + routing.approverEmail, 'error');
+      return;
+    }
+  }
+  if (routing.mode === 'multi' && routing.candidates) {
+    const ok = routing.candidates.some(e => e.toLowerCase() === String(approver).toLowerCase());
+    if (!ok) { showToast('Pick one of the department heads for this order.', 'error'); return; }
+  }
+
+  const needsGl = items.some(li => li.deferred);
 
   if (_selectedFiles.po.some(i => i.error)) {
     showToast('Please remove any invalid attachments before submitting', 'error');
@@ -4114,7 +4624,9 @@ async function submitPO() {
       fiscalYear: _fiscalYearLabel(new Date()),
       vendor: vendor,
       lineItems: items,
-      glcode: items[0].glcode,          // header code kept for legacy reports
+      glcode: items[0].glcode || '',    // header code kept for legacy reports
+      needsGlAssignment: needsGl,
+      routingMode: routing.mode,
       description: notes,
       totalPrice: totalPrice,
       approver: approver,
@@ -4144,7 +4656,8 @@ async function submitPO() {
     }
 
     await logEvent('po', docRef.id, 'submitted', notes || null, {
-      poNumber, totalPrice, vendor, lineCount: items.length, approver
+      poNumber, totalPrice, vendor, lineCount: items.length, approver,
+      routing: routing.mode, needsGlAssignment: needsGl
     });
     if (selfApproved) {
       await logEvent('po', docRef.id, 'approved', 'Auto-approved: submitter is the assigned approver', { totalPrice });
@@ -4155,7 +4668,8 @@ async function submitPO() {
     const conf = document.getElementById('po-confirmation');
     conf.textContent = selfApproved
       ? `PO ${poNumber} auto-approved (you were the approver).`
-      : `PO ${poNumber} submitted — ${_money(totalPrice)} to ${vendor}.`;
+      : `PO ${poNumber} submitted — ${_money(totalPrice)} to ${vendor}.` +
+        (needsGl ? ' The approver will assign the account code.' : '');
     conf.style.display = 'block';
 
     form.reset();
@@ -4174,14 +4688,8 @@ async function submitPO() {
 
 // Load approvers for PO form (active admins/approvers only)
 async function loadApproversForPO() {
-  const select = document.getElementById('po-approver');
-  if (!select) return;
-  const approvers = await _eligibleApprovers();
-  select.innerHTML = '<option value="" disabled selected>Select an approver</option>' +
-    approvers.map(a => `<option value="${esc(a.email)}">${esc(a.name)} (${esc(a.email)})</option>`).join('');
-  if (!approvers.length) {
-    select.innerHTML = '<option value="" disabled selected>No active approvers — ask an admin</option>';
-  }
+  // _refreshApproverForAmount owns this dropdown — it decides whether the
+  // choice is locked to a department head or left open.
   await _refreshApproverForAmount();
 }
 
@@ -4201,9 +4709,10 @@ async function loadApproversForCheck() {
 async function loadAccountsForCheck() {
   const select = document.getElementById('check-glcode');
   if (!select) return;
-  const accounts = await loadAccounts();
+  const accounts = await _accountsForUser();
   select.innerHTML = '<option value="">— none —</option>' +
-    accounts.map(a => `<option value="${esc(a.code)}">${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`).join('');
+    accounts.map(a => `<option value="${esc(a.code)}">${esc(a.code)}${a.name ? ' · ' + esc(a.name) : ''}</option>`).join('') +
+    `<option value="${DEFER_GL}">Approver selects code</option>`;
 }
 
 // Fill the vendor autocomplete list
@@ -4245,7 +4754,9 @@ async function submitCheck() {
     const selfApproved = (approver || '').toLowerCase() === myEmail
       && (userRole === 'admin' || userRole === 'approver');
 
-    const glcode = (form.querySelector('[name="checkGlcode"]') || {}).value || '';
+    const rawGl = (form.querySelector('[name="checkGlcode"]') || {}).value || '';
+    const checkNeedsGl = rawGl === DEFER_GL;
+    const glcode = checkNeedsGl ? '' : rawGl;
 
     const checkPayload = {
       checkNumber: checkNumber,
@@ -4254,6 +4765,7 @@ async function submitCheck() {
       amount: amount,
       category: category,
       glcode: glcode,
+      needsGlAssignment: checkNeedsGl,
       approver: approver,
       description: description,
       checkDescription: description,
